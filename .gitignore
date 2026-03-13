@@ -50,3 +50,22 @@ vcpkg/
 
 # Ignore local cache used by e.g. clangd
 .cache/
+
+# Local CMake and build caches
+cmake-cache/
+cmake-cache-*/
+
+# Python caches
+__pycache__/
+
+# Generated simulator outputs and local analysis artifacts
+sim_campaign_logs/
+contrib/nr/examples/5G-LENA-digital-twin-script/sim_campaign_logs/
+contrib/nr/examples/5G-LENA-digital-twin-script/plots/
+contrib/nr/examples/5G-LENA-digital-twin-script/rem_plots/
+contrib/nr/examples/5G-LENA-digital-twin-script/packets_5.json
+contrib/nr/examples/5G-LENA-digital-twin-script/sched_5.json
+contrib/nr/examples/5G-LENA-digital-twin-script/*.png
+contrib/nr/examples/5G-LENA-digital-twin-script/*.pdf
+contrib/nr/examples/5G-LENA-digital-twin-script/*analysis_results.txt
+contrib/nr/examples/5G-LENA-digital-twin-script/*analysis_info.txt
