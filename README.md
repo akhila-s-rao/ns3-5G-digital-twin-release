@@ -29,14 +29,14 @@ If you need clean upstreamable changes later, extract them from this repo into s
 For this repo, configure ns-3 with examples enabled and an optimized build profile:
 
 ```bash
-./ns3 configure -d optimized --enable-examples
+./ns3 configure --build-profile optimized --enable-examples
 ./ns3 build
 ```
 
 If you also want the ns-3 tests enabled, use:
 
 ```bash
-./ns3 configure -d optimized --enable-examples --enable-tests
+./ns3 configure --build-profile optimized --enable-examples --enable-tests
 ./ns3 build
 ```
 
