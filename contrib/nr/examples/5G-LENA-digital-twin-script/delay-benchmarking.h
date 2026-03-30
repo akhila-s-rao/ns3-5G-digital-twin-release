@@ -149,7 +149,7 @@ struct Parameters
     uint32_t numRbPerRbg = 5; // NR scheduler RBG size in RBs.
     
     // Buffer sizes 
-    uint32_t rlcTxBuffSize = 200 * 1024; // default is 10240 
+    uint32_t rlcTxBuffSize = 80 * 1024; // default is 10240 
     uint32_t tcpUdpBuffSize = 500 * 1024; // default is 131072
 
     // position and mobility model

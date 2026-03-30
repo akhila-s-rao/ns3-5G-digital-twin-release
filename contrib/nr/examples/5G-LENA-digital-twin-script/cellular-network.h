@@ -157,7 +157,7 @@ struct Parameters
     uint16_t NumberOfRaPreambles = 40; // Random-access preamble pool size.
     bool UseIdealRrc = true; // Ideal RRC to avoid control-channel errors.
     uint32_t numRbPerRbg = 5; // NR scheduler RBG size in RBs.
-    bool enableBootstrapMcsLimit = false; // Cap SR bootstrap UL grant MCS to min(estimated, 9).
+    bool enableBootstrapMcsLimit = true; // Cap SR bootstrap UL grant MCS to min(estimated, 9).
     
     // Buffer sizes (bytes).
     uint32_t rlcTxBuffSize = 80 * 1024; // default is 10240 

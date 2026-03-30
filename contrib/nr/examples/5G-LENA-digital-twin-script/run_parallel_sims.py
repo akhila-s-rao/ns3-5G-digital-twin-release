@@ -24,7 +24,7 @@ COMMON_ARGS = {
     "vrBearerQci": 80,
     "controlBearerQci": 80,
     "createRemMap": False,
-    "randomSeed": 13,
+    "randomSeed": 3,
 }
 
 RUNS = [
