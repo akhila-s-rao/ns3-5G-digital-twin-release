@@ -89,6 +89,8 @@ Below is the effective parameter list for each run.
 
 For each generated run, the runner writes the exact `ns3 run` command into `sim_campaign_logs/<run>/run_cmd.txt`.
 
+For more information about the generated log files and the meaning of their columns, refer to `contrib/nr/examples/5G-LENA-digital-twin-script/logging_documentation.txt`.
+
 ## Notes
 
 - build outputs and generated logs are not intended to be versioned
