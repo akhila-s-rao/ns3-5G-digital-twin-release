@@ -271,8 +271,12 @@ def filter_direction(
 def load_logs(run_dir: Path, filenames: List[str]) -> Dict[str, pd.DataFrame]:
     """Load logs and keep only selected/context columns."""
     data: Dict[str, pd.DataFrame] = {}
+    missing: List[str] = []
     for filename in filenames:
         path = run_dir / filename
+        if not path.exists():
+            missing.append(filename)
+            continue
         config = LOG_CONFIG[filename]
         df = read_log(path)
         data[filename] = filter_log_columns(
@@ -280,6 +284,10 @@ def load_logs(run_dir: Path, filenames: List[str]) -> Dict[str, pd.DataFrame]:
             config["metrics"],
             config["context"],
         )
+    if missing:
+        print(f"INFO: skipping missing logs in {run_dir.name}: {', '.join(missing)}")
+    if not data:
+        raise FileNotFoundError(f"No selected log files found in {run_dir}")
     return data
 
 def has_log_files(run_dir: Path, filenames: List[str]) -> bool:
