@@ -19,6 +19,7 @@ KNOWN_LOGS = [
     "RlcTxQueueSojournTrace.txt",
     "RlcHolGrantWaitTrace.txt",
 ]
+LENA_DELAY_DECOMPOSITION_CSV = "5Glena_delay_decomposition.csv"
 EXPECA_CSV_REQUIRED_COLUMNS = {
     "End to End Delay",
     "Scheduling delay",
@@ -284,6 +285,163 @@ def load_expeca_csv_metrics(csv_path: Path) -> pd.DataFrame | None:
     return df
 
 
+def merge_metric_column(base: pd.DataFrame,
+                        metric: pd.DataFrame | None,
+                        columns: list[str]) -> pd.DataFrame:
+    if metric is None or metric.empty:
+        return base
+    available = ["rnti", "pkt_id"] + [col for col in columns if col in metric.columns]
+    return base.merge(
+        metric[available].drop_duplicates(subset=["rnti", "pkt_id"], keep="first"),
+        on=["rnti", "pkt_id"],
+        how="left",
+    )
+
+
+def build_lena_delay_decomposition_table(
+    selected_rnti: int,
+    df_delay: pd.DataFrame | None,
+    df_pregrant_grant_wait: pd.DataFrame | None,
+    df_frame_alignment: pd.DataFrame | None,
+    df_sched_delay2: pd.DataFrame | None,
+    df_ul_rlc_plot: pd.DataFrame | None,
+    df_link_delay: pd.DataFrame | None,
+    df_segmentation_delay: pd.DataFrame | None,
+    df_reordering_delay: pd.DataFrame | None,
+    df_rlc_segments_per_pkt: pd.DataFrame | None,
+) -> pd.DataFrame:
+    table = pd.DataFrame(columns=["rnti", "pkt_id"])
+
+    if df_delay is not None:
+        ul_delay = df_delay[
+            (df_delay["direction"] == "UL") & (df_delay["rnti"] == selected_rnti)
+        ].copy()
+        if "seq_num" in ul_delay.columns:
+            ul_delay["pkt_id"] = pd.to_numeric(ul_delay["seq_num"], errors="coerce")
+        ul_delay["app_rx_time_us"] = pd.to_numeric(ul_delay["time_us"], errors="coerce")
+        ul_delay["ul_end_to_end_delay_ms"] = pd.to_numeric(ul_delay["delay_us"], errors="coerce") / 1000.0
+        ul_delay["app_tx_time_us"] = ul_delay["app_rx_time_us"] - pd.to_numeric(ul_delay["delay_us"], errors="coerce")
+        base_cols = [
+            "rnti",
+            "pkt_id",
+            "pkt_size",
+            "pkt_uid",
+            "app_tx_time_us",
+            "app_rx_time_us",
+            "ul_end_to_end_delay_ms",
+        ]
+        table = ul_delay[[col for col in base_cols if col in ul_delay.columns]].dropna(subset=["rnti", "pkt_id"])
+
+    if table.empty:
+        source_frames = [
+            df_pregrant_grant_wait,
+            df_frame_alignment,
+            df_sched_delay2,
+            df_ul_rlc_plot,
+            df_link_delay,
+            df_segmentation_delay,
+            df_reordering_delay,
+            df_rlc_segments_per_pkt,
+        ]
+        keys = []
+        for frame in source_frames:
+            if frame is None or frame.empty:
+                continue
+            keys.append(frame[frame["rnti"] == selected_rnti][["rnti", "pkt_id"]])
+        if keys:
+            table = pd.concat(keys, ignore_index=True).drop_duplicates(subset=["rnti", "pkt_id"])
+
+    if table.empty:
+        return table
+
+    table = merge_metric_column(
+        table,
+        df_pregrant_grant_wait[df_pregrant_grant_wait["rnti"] == selected_rnti] if df_pregrant_grant_wait is not None else None,
+        [
+            "soj_time_us",
+            "hol_time_us",
+            "pre_hol_wait_ms",
+            "hol_wait_ms",
+            "pregrant_plus_grant_wait_ms",
+        ],
+    )
+    table = merge_metric_column(
+        table,
+        df_frame_alignment[df_frame_alignment["rnti"] == selected_rnti] if df_frame_alignment is not None else None,
+        ["pdcp_tx_time_us", "time_us", "frame_alignment_delay_ms"],
+    ).rename(columns={"time_us": "sr_time_us"})
+    table = merge_metric_column(
+        table,
+        df_sched_delay2[df_sched_delay2["rnti"] == selected_rnti] if df_sched_delay2 is not None else None,
+        ["first_pkt_tx_time_us", "sched_delay2_ms"],
+    )
+    table = merge_metric_column(
+        table,
+        df_ul_rlc_plot[df_ul_rlc_plot["rnti"] == selected_rnti] if df_ul_rlc_plot is not None else None,
+        ["time_us", "delay_ms"],
+    ).rename(columns={"time_us": "tx_retx_time_us", "delay_ms": "tx_retx_delay_ms"})
+    table = merge_metric_column(
+        table,
+        df_link_delay[df_link_delay["rnti"] == selected_rnti] if df_link_delay is not None else None,
+        ["first_grant_time_us", "last_rlc_rx_time_us", "link_delay_ms"],
+    )
+    table = merge_metric_column(
+        table,
+        df_segmentation_delay[df_segmentation_delay["rnti"] == selected_rnti] if df_segmentation_delay is not None else None,
+        ["segmentation_delay_ms"],
+    )
+    table = merge_metric_column(
+        table,
+        df_reordering_delay[df_reordering_delay["rnti"] == selected_rnti] if df_reordering_delay is not None else None,
+        ["pdcp_rx_time_us", "reordering_delay_ms"],
+    )
+    table = merge_metric_column(
+        table,
+        df_rlc_segments_per_pkt[df_rlc_segments_per_pkt["rnti"] == selected_rnti] if df_rlc_segments_per_pkt is not None else None,
+        ["first_tx_time_us", "rlc_segments_per_pkt"],
+    )
+
+    table = table.rename(
+        columns={
+            "pkt_size": "pkt_size_bytes",
+            "pregrant_plus_grant_wait_ms": "queueing_delay_ms",
+            "sched_delay2_ms": "scheduling_delay_ms",
+        }
+    )
+    ordered_cols = [
+        "rnti",
+        "pkt_id",
+        "pkt_uid",
+        "pkt_size_bytes",
+        "app_tx_time_us",
+        "app_rx_time_us",
+        "pdcp_tx_time_us",
+        "sr_time_us",
+        "soj_time_us",
+        "hol_time_us",
+        "first_pkt_tx_time_us",
+        "first_tx_time_us",
+        "first_grant_time_us",
+        "tx_retx_time_us",
+        "last_rlc_rx_time_us",
+        "pdcp_rx_time_us",
+        "ul_end_to_end_delay_ms",
+        "pre_hol_wait_ms",
+        "hol_wait_ms",
+        "queueing_delay_ms",
+        "frame_alignment_delay_ms",
+        "scheduling_delay_ms",
+        "tx_retx_delay_ms",
+        "link_delay_ms",
+        "segmentation_delay_ms",
+        "reordering_delay_ms",
+        "rlc_segments_per_pkt",
+    ]
+    existing_ordered = [col for col in ordered_cols if col in table.columns]
+    extras = [col for col in table.columns if col not in existing_ordered]
+    return table[existing_ordered + extras].sort_values(["rnti", "pkt_id"])
+
+
 def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     if not has_required_logs(input_dir):
         print(f"WARN: skipping {input_dir}, no known log files found")
@@ -293,6 +451,7 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     df_ul_rlc = filter_data_only(load_tsv(input_dir / "NrUlRlcRxComponentStats.txt"))
     df_ul_rlc_tx = filter_data_only(load_tsv(input_dir / "NrUlRlcTxComponentStats.txt"))
     df_ul_pdcp_tx = filter_data_only(load_tsv(input_dir / "NrUlPdcpTxStats.txt"))
+    df_ul_pdcp_rx = filter_data_only(load_tsv(input_dir / "NrUlPdcpRxStats.txt"))
     df_rlc_sojourn = filter_data_only(load_tsv(input_dir / "RlcTxQueueSojournTrace.txt"))
     df_rlc_hol_wait = filter_data_only(load_tsv(input_dir / "RlcHolGrantWaitTrace.txt"))
     df_ue_phy_ctrl = load_tsv(input_dir / "UePhyCtrlTxTrace.txt")
@@ -309,6 +468,9 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
         )
         df_ul_pdcp_tx = require_optional_columns(
             df_ul_pdcp_tx, "NrUlPdcpTxStats.txt", {"time_us", "rnti", "pkt_id"}
+        )
+        df_ul_pdcp_rx = require_optional_columns(
+            df_ul_pdcp_rx, "NrUlPdcpRxStats.txt", {"time_us", "rnti", "pkt_id"}
         )
         df_rlc_sojourn = require_optional_columns(
             df_rlc_sojourn, "RlcTxQueueSojournTrace.txt", {"time_us", "rnti", "pkt_id", "pre_hol_wait_us"}
@@ -494,11 +656,14 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     df_frame_alignment = None
     if df_sr is not None and df_ul_pdcp_tx is not None:
         sr = df_sr.copy()
-        pdcp_tx = df_ul_pdcp_tx[["time_us", "rnti"]].rename(columns={"time_us": "pdcp_tx_time_us"}).copy()
+        pdcp_tx_cols = ["time_us", "rnti"] + (["pkt_id"] if "pkt_id" in df_ul_pdcp_tx.columns else [])
+        pdcp_tx = df_ul_pdcp_tx[pdcp_tx_cols].rename(columns={"time_us": "pdcp_tx_time_us"}).copy()
         sr = sr.sort_values(["time_us", "rnti"]).copy()
         sr["prev_sr_time_us"] = sr.groupby("rnti")["time_us"].shift(1)
         for col in ["pdcp_tx_time_us", "rnti"]:
             pdcp_tx[col] = pd.to_numeric(pdcp_tx[col], errors="coerce")
+        if "pkt_id" in pdcp_tx.columns:
+            pdcp_tx["pkt_id"] = pd.to_numeric(pdcp_tx["pkt_id"], errors="coerce")
         pdcp_tx = pdcp_tx.dropna(subset=["pdcp_tx_time_us", "rnti"]).sort_values(["pdcp_tx_time_us", "rnti"])
         if not sr.empty and not pdcp_tx.empty:
             df_frame_alignment = pd.merge_asof(
@@ -523,6 +688,43 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
                 df_frame_alignment["frame_alignment_delay_us"] / 1000.0
             )
             df_frame_alignment = df_frame_alignment.sort_values("time_us")
+
+    df_reordering_delay = None
+    if df_ul_rlc is not None and df_ul_pdcp_rx is not None:
+        rlc_rx = df_ul_rlc[["rnti", "pkt_id", "time_us"]].copy()
+        pdcp_rx = df_ul_pdcp_rx[["rnti", "pkt_id", "time_us"]].copy()
+        for col in ["rnti", "pkt_id", "time_us"]:
+            rlc_rx[col] = pd.to_numeric(rlc_rx[col], errors="coerce")
+            pdcp_rx[col] = pd.to_numeric(pdcp_rx[col], errors="coerce")
+        rlc_rx = rlc_rx.dropna(subset=["rnti", "pkt_id", "time_us"])
+        pdcp_rx = pdcp_rx.dropna(subset=["rnti", "pkt_id", "time_us"])
+        rlc_rx = rlc_rx[rlc_rx["pkt_id"] != 0]
+        pdcp_rx = pdcp_rx[pdcp_rx["pkt_id"] != 0]
+        if not rlc_rx.empty and not pdcp_rx.empty:
+            rlc_last = (
+                rlc_rx.sort_values("time_us")
+                .groupby(["rnti", "pkt_id"], as_index=False)["time_us"]
+                .max()
+                .rename(columns={"time_us": "last_rlc_rx_time_us"})
+            )
+            pdcp_first = (
+                pdcp_rx.sort_values("time_us")
+                .groupby(["rnti", "pkt_id"], as_index=False)["time_us"]
+                .min()
+                .rename(columns={"time_us": "pdcp_rx_time_us"})
+            )
+            df_reordering_delay = pd.merge(rlc_last, pdcp_first, on=["rnti", "pkt_id"], how="inner")
+            if not df_reordering_delay.empty:
+                df_reordering_delay["reordering_delay_us"] = (
+                    df_reordering_delay["pdcp_rx_time_us"] - df_reordering_delay["last_rlc_rx_time_us"]
+                )
+                df_reordering_delay = df_reordering_delay[df_reordering_delay["reordering_delay_us"] >= 0]
+                if not df_reordering_delay.empty:
+                    df_reordering_delay["reordering_delay_ms"] = (
+                        df_reordering_delay["reordering_delay_us"] / 1000.0
+                    )
+                    df_reordering_delay["time_us"] = df_reordering_delay["pdcp_rx_time_us"]
+                    df_reordering_delay = df_reordering_delay.sort_values("time_us")
 
     # Reordering delay can be re-enabled later if needed.
     # It was intentionally commented out instead of being controlled by a CLI flag.
@@ -569,7 +771,7 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     #                 df_reordering_delay = df_reordering_delay.sort_values("time_us")
 
     rntis = set()
-    for df in [df_delay, df_ul_rlc, df_ul_rlc_tx, df_ul_pdcp_tx, df_rlc_sojourn, df_rlc_hol_wait]:
+    for df in [df_delay, df_ul_rlc, df_ul_rlc_tx, df_ul_pdcp_tx, df_ul_pdcp_rx, df_rlc_sojourn, df_rlc_hol_wait]:
         if df is not None:
             rntis.update(df["rnti"].dropna().unique().tolist())
     rntis = sorted(int(r) for r in rntis)
@@ -589,6 +791,19 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     if selected_rnti is None:
         print(f"WARN: could not isolate a unique delay-probe-only RNTI in {input_dir}; skipping run")
         return None
+
+    delay_decomposition = build_lena_delay_decomposition_table(
+        selected_rnti,
+        df_delay,
+        df_pregrant_grant_wait,
+        df_frame_alignment,
+        df_sched_delay2,
+        df_ul_rlc_plot,
+        df_link_delay,
+        df_segmentation_delay,
+        df_reordering_delay,
+        df_rlc_segments_per_pkt,
+    )
 
     metric_items = [
         (df_delay[(df_delay["direction"] == "UL") & (df_delay["rnti"] == selected_rnti)]["delay_ms"]
@@ -661,6 +876,7 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     ])
     return {
         "rnti": selected_rnti,
+        "delay_decomposition": delay_decomposition,
         "metric_items": metric_items,
         "ts_items": ts_items,
     }
@@ -702,6 +918,7 @@ def plot_compare_pair(run_no: int,
     expeca_items = build_expeca_compare_metric_items(expeca_df)
     lena_items = lena["metric_items"]
     lena_ts_items = lena["ts_items"]
+    lena_delay_decomposition = lena["delay_decomposition"]
 
     run_label = f"run{run_no:02d}"
     benchmark_desc = BENCHMARK_TITLE_BY_RUN.get(run_no)
@@ -741,6 +958,9 @@ def plot_compare_pair(run_no: int,
     fig.savefig(output_root / f"{run_label}_series.png", dpi=150)
     plt.close(fig)
 
+    csv_path = lena_run_dir / LENA_DELAY_DECOMPOSITION_CSV
+    lena_delay_decomposition.to_csv(csv_path, index=False)
+    print(f"Wrote 5G-LENA delay decomposition CSV for {run_label} to {csv_path}")
     print(f"Wrote comparison plots for {run_label} to {output_root}")
 
 def main():
