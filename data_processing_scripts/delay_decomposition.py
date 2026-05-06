@@ -415,16 +415,6 @@ def build_lena_delay_decomposition_table(
         "pkt_size_bytes",
         "app_tx_time_us",
         "app_rx_time_us",
-        "pdcp_tx_time_us",
-        "sr_time_us",
-        "soj_time_us",
-        "hol_time_us",
-        "first_pkt_tx_time_us",
-        "first_tx_time_us",
-        "first_grant_time_us",
-        "tx_retx_time_us",
-        "last_rlc_rx_time_us",
-        "pdcp_rx_time_us",
         "ul_end_to_end_delay_ms",
         "pre_hol_wait_ms",
         "hol_wait_ms",
@@ -438,8 +428,7 @@ def build_lena_delay_decomposition_table(
         "rlc_segments_per_pkt",
     ]
     existing_ordered = [col for col in ordered_cols if col in table.columns]
-    extras = [col for col in table.columns if col not in existing_ordered]
-    return table[existing_ordered + extras].sort_values(["rnti", "pkt_id"])
+    return table[existing_ordered].sort_values(["rnti", "pkt_id"])
 
 
 def load_lena_compare_metrics(input_dir: Path) -> dict | None:
@@ -904,7 +893,8 @@ def build_expeca_compare_metric_items(df: pd.DataFrame) -> list[tuple[pd.Series,
 def plot_compare_pair(run_no: int,
                       expeca_csv: Path,
                       lena_run_dir: Path,
-                      output_root: Path) -> None:
+                      output_root: Path,
+                      csv_output_dir: Path) -> None:
     expeca_df = load_expeca_csv_metrics(expeca_csv)
     if expeca_df is None or expeca_df.empty:
         print(f"WARN: skipping run{run_no:02d}, unusable ExPeCA CSV: {expeca_csv}")
@@ -915,6 +905,7 @@ def plot_compare_pair(run_no: int,
         return
 
     output_root.mkdir(parents=True, exist_ok=True)
+    csv_output_dir.mkdir(parents=True, exist_ok=True)
     expeca_items = build_expeca_compare_metric_items(expeca_df)
     lena_items = lena["metric_items"]
     lena_ts_items = lena["ts_items"]
@@ -958,7 +949,7 @@ def plot_compare_pair(run_no: int,
     fig.savefig(output_root / f"{run_label}_series.png", dpi=150)
     plt.close(fig)
 
-    csv_path = lena_run_dir / LENA_DELAY_DECOMPOSITION_CSV
+    csv_path = csv_output_dir / f"benchmark{run_no:02d}_{LENA_DELAY_DECOMPOSITION_CSV}"
     lena_delay_decomposition.to_csv(csv_path, index=False)
     print(f"Wrote 5G-LENA delay decomposition CSV for {run_label} to {csv_path}")
     print(f"Wrote comparison plots for {run_label} to {output_root}")
@@ -1010,7 +1001,14 @@ def main():
         / "sim_campaign_logs"
         / "compare_expeca_5Glena_logs"
     )
+    csv_output_dir = (
+        Path(__file__).resolve().parents[1]
+        / "sim_campaign_logs"
+        / "benchmarking_traffic"
+        / "delay_decomposition_data"
+    )
     print(f"Writing comparison plots under: {output_root}")
+    print(f"Writing 5G-LENA delay decomposition CSVs under: {csv_output_dir}")
     for run_no in common_runs:
         if run_no == 13:
             print("WARN: skipping run13 by request")
@@ -1020,6 +1018,7 @@ def main():
             expeca_by_run[run_no],
             lena_by_run[run_no],
             output_root,
+            csv_output_dir,
         )
 
     return 0
