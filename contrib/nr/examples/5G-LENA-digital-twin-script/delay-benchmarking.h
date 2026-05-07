@@ -168,6 +168,8 @@ struct Parameters
     bool includeDlDelayApp = true;
     std::string direction = "ul"; // ul, dl, or both
     double cbrLoadMbps = 10.0;
+    // QCI priority is considered only by QoS-based schedulers such as NrMacSchedulerOfdmaQos.
+    // In the stock QoS scheduler, QCI affects UE ordering, not strict per-bearer scheduling.
     uint8_t controlBearerQci = NrEpsBearer::NGBR_LOW_LAT_EMBB; // NGBR_LOW_LAT_EMBB= priority_rank 68, NGBR_IMS=10
     // UL MCS control: 0 keeps adaptive UL AMC; 1..27 fixes UL MCS to this value.
     uint32_t fixUlMcs = 0;

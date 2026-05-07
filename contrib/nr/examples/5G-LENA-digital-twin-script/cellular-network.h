@@ -193,6 +193,8 @@ struct Parameters
     std::string vrAppProfile = "VirusPopper";
     bool createRemMap = false;
     std::string remDirection = "DL"; // DL or UL
+    // QCI priority is considered only by QoS-based schedulers such as NrMacSchedulerOfdmaQos.
+    // In the stock QoS scheduler, QCI affects UE ordering, not strict per-bearer scheduling.
     uint8_t vrBearerQci = NrEpsBearer::NGBR_LOW_LAT_EMBB; //NGBR_LOW_LAT_EMBB = priority_rank 68
     uint8_t controlBearerQci = NrEpsBearer::NGBR_LOW_LAT_EMBB; // NGBR_LOW_LAT_EMBB= priority_rank 68, NGBR_IMS=10
 

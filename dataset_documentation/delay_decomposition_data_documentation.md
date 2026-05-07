@@ -22,7 +22,7 @@ The script first filters data traffic where possible: `msg_type == DATA` and `lc
 | `scheduling_delay_ms` | ms | Delay from scheduling request to first RLC packet TX, derived as `(first_pkt_tx_time_us - sr_time_us) / 1000`; first packet TX is matched to the latest fresh SR for the same UE. | `UePhyCtrlTxTrace.txt`, `NrUlRlcTxComponentStats.txt` |
 | `tx_retx_delay_ms` | ms | MAC/PHY transmission plus retransmission delay observed at gNB RLC, derived as the maximum per-packet RLC RX component `delay_us / 1000`. | `NrUlRlcRxComponentStats.txt` |
 | `link_delay_ms` | ms | Delay from first grant/dequeue to final RLC RX for the packet, derived as `(last_rlc_rx_time_us - first_grant_time_us) / 1000`. | `RlcHolGrantWaitTrace.txt`, `NrUlRlcRxComponentStats.txt` |
-| `segmentation_delay_ms` | ms | Extra link/RAN time not explained by tx + retx delay, derived as `link_delay_ms - tx_retx_delay_ms`. | Derived from link delay and `NrUlRlcRxComponentStats.txt` |
+| `segmentation_delay_ms` | ms | Extra link delay not explained by tx + retx delay, derived as `link_delay_ms - tx_retx_delay_ms`. | Derived from link delay and `NrUlRlcRxComponentStats.txt` |
 | `reordering_delay_ms` | ms | Delay from final RLC RX to first PDCP RX, derived as `(pdcp_rx_time_us - last_rlc_rx_time_us) / 1000`. | `NrUlRlcRxComponentStats.txt`, `NrUlPdcpRxStats.txt` |
 | `rlc_segments_per_pkt` | count | Number of unique RLC sequence numbers used by the packet. | `NrUlRlcTxComponentStats.txt` |
 

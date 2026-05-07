@@ -35,12 +35,9 @@ RUNS = [
     {"name": "run05", "args": {"channelScenario": "InH-OfficeMixed"}},
     {"name": "run06", "args": {"channelScenario": "UMi"}},
     {"name": "run07", "args": {"channelScenario": "UMa"}},
-    {"name": "run08", "args": {"controlBearerQci": 69}},
-    {"name": "run09", "args": {"controlBearerQci": 83}},
-    {"name": "run10", "args": {"controlBearerQci": 5}},
-    {"name": "run11", "args": {"vrAppProfile": "Minecraft"}},
-    {"name": "run12", "args": {"vrAppProfile": "GoogleEarthVrCities"}},
-    {"name": "run13", "args": {"vrAppProfile": "GoogleEarthVrTour"}},
+    {"name": "run08", "args": {"vrAppProfile": "Minecraft"}},
+    {"name": "run09", "args": {"vrAppProfile": "GoogleEarthVrCities"}},
+    {"name": "run10", "args": {"vrAppProfile": "GoogleEarthVrTour"}},
 ]
 
 
