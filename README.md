@@ -55,8 +55,8 @@ Scripts `cellular-network-user.cc` and `delay-benchmarking-user.cc` create the t
 ### Batch runners for large simulation campaigns
 These scripts help setup a simulation campaign with multiple simulations in parallel over multiple parameter settings:
 
-- `run_parallel_sims.py`
-- `run-parallel-benchmarking.py`
+- `run-parallel-bursty-traffic-sims.py`
+- `run-parallel-benchmarking-sims.py`
 
 Run them from the repo root or from the script directory, depending on the script.
 
