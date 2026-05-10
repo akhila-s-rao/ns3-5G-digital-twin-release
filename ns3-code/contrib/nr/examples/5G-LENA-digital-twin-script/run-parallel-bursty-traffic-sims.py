@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import argparse
 import os
 import shlex
 import subprocess
@@ -7,7 +8,6 @@ import time
 
 # Simple settings you can edit.
 MAX_PARALLEL = max(1, (os.cpu_count() or 1))
-OUTPUT_BASE = Path(__file__).resolve().parent / "sim_campaign_logs"
 
 # Common CLI args shared by all runs.
 COMMON_ARGS = {
@@ -60,8 +60,16 @@ def build_run_spec(common, run_args):
 
 script_dir = Path(__file__).resolve().parent
 ns3_root = script_dir.parents[3]
+parser = argparse.ArgumentParser(description="Run bursty traffic simulations in parallel")
+parser.add_argument(
+    "--output-dir",
+    required=True,
+    help="Directory where per-run simulation logs should be written.",
+)
+args = parser.parse_args()
+output_base = Path(args.output_dir).resolve()
 
-OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
+output_base.mkdir(parents=True, exist_ok=True)
 run_specs = [(r["name"], build_run_spec(COMMON_ARGS, r["args"])) for r in RUNS]
 
 running = []
@@ -72,7 +80,7 @@ while idx < len(run_specs) or running:
     # Start new runs until MAX_PARALLEL is reached.
     while idx < len(run_specs) and len(running) < MAX_PARALLEL:
         name, spec = run_specs[idx]
-        run_dir = OUTPUT_BASE / name
+        run_dir = output_base / name
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "run_cmd.txt").write_text(spec + "\n")
         cmd = [str(ns3_root / "./ns3"), "run", "--no-build", spec, f"--cwd={run_dir}"]

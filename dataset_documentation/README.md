@@ -47,7 +47,7 @@ All runs inherit the common campaign defaults:
 
 | Run | Parameter change from campaign default | Purpose |
 |---|---|---|
-| `run01` | none | Baseline bursty run |
+| `run01` | `numUesWithVrApp=3` | Baseline bursty run, matching the campaign default |
 | `run02` | `numUesWithVrApp=2` | Lower bursty traffic load |
 | `run03` | `numUesWithVrApp=5` | Higher bursty traffic load |
 | `run04` | `numUesWithVrApp=6` | Highest bursty traffic load in this campaign |
@@ -62,7 +62,7 @@ All runs inherit the common campaign defaults:
 
 | Dataset | Link | Contains | Related documentation |
 |---|---|---|---|
-| Bursty traffic logs | [Google Drive](https://drive.google.com/drive/folders/1ri-lEMtLknnHW55Hqn2xiYxC8jwfg4XA?usp=sharing) | `sample_run/` preview and `xr_logs.zip` containing the 13 bursty runs | [raw logs](raw_ns3_data_documentation.md), [parsed uplink data](parsed_uplink_data_documentation.md), [delay decomposition data](delay_decomposition_data_documentation.md) |
+| Bursty traffic logs | [Google Drive](https://drive.google.com/drive/folders/1ri-lEMtLknnHW55Hqn2xiYxC8jwfg4XA?usp=sharing) | `sample_run/` preview and `xr_logs.zip` containing the 10 bursty runs | [raw logs](raw_ns3_data_documentation.md), [parsed uplink data](parsed_uplink_data_documentation.md), [delay decomposition data](delay_decomposition_data_documentation.md) |
 
 ## Scenario 2: Benchmarking Traffic
 
@@ -83,10 +83,12 @@ All runs inherit the common benchmark defaults:
 
 | Run range | Parameter sweep | Background load | Purpose |
 |---|---|---|---|
-| `benchmark01`-`benchmark09` | `delayPacketSize` in `{30, 100, 1200}` bytes and `delayInterval` in `{20ms, 50ms, 100ms}` | none | Baseline delay behavior without competing traffic |
-| `benchmark10`-`benchmark18` | same packet-size and interval sweep | TCP background load | Delay behavior under TCP uplink load |
-| `benchmark19`-`benchmark27` | same packet-size and interval sweep | UDP CBR load, `cbrLoad=10` Mbps | Delay behavior under moderate UDP uplink load |
-| `benchmark28`-`benchmark36` | same packet-size and interval sweep | UDP CBR load, `cbrLoad=20` Mbps | Delay behavior under higher UDP uplink load |
+| `benchmark01`-`benchmark05` | `delayPacketSize` in `{50, 100, 500, 1000, 1400}` bytes with `delayInterval=50ms` | none | Packet-size sweep without competing traffic |
+| `benchmark06`-`benchmark09` | `delayPacketSize=1400` bytes with `delayInterval` in `{20ms, 25ms, 75ms, 100ms}` | none | Inter-packet interval sweep without competing traffic |
+| `benchmark10`-`benchmark13` | `delayPacketSize` in `{50, 1400}` bytes and `delayInterval` in `{20ms, 50ms, 100ms}` for the listed runs | UDP CBR load 10 Mbps | Delay behavior under 25% UDP uplink load |
+| `benchmark14`-`benchmark17` | `delayPacketSize` in `{50, 1400}` bytes and `delayInterval` in `{20ms, 50ms, 100ms}` for the listed runs | UDP CBR load 20 Mbps | Delay behavior under 50% UDP uplink load |
+| `benchmark18`-`benchmark21` | `delayPacketSize` in `{50, 1400}` bytes and `delayInterval` in `{20ms, 50ms, 100ms}` for the listed runs | UDP CBR load 30 Mbps | Delay behavior under 75% UDP uplink load |
+| `benchmark22`-`benchmark25` | `delayPacketSize` in `{50, 1400}` bytes and `delayInterval` in `{20ms, 50ms, 100ms}` for the listed runs | TCP full buffer background load | Delay behavior under TCP full buffer uplink load |
 
 ### Benchmarking Traffic Dataset Access
 

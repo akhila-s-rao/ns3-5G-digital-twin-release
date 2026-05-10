@@ -52,6 +52,7 @@
 #include "ns3/nr-ue-mac.h"
 #include "ns3/nr-eps-bearer.h"
 #include "ns3/nr-spectrum-phy.h"
+#include "ns3/seq-ts-size-frag-header.h"
 #include <iomanip>
 #include "ns3/log.h"
 #include "ns3/nr-phy-mac-common.h"
@@ -60,8 +61,8 @@
 #include "ns3/nr-mac-short-bsr-ce.h"
 #include "nr-trace-streams.h"
 
-#ifndef DELAY_BENCHMARKING_FUNCTION_H
-#define DELAY_BENCHMARKING_FUNCTION_H
+#ifndef CELLULAR_NETWORK_FUNCTION_H
+#define CELLULAR_NETWORK_FUNCTION_H
 
     // NrEpsBearer::Qci (Release 18) values, priority ranks (lower is higher priority),
     // and packet delay budget (PDB) in ms:
@@ -101,12 +102,22 @@
     // | DGBR_VISUAL_CONTENT_90      | 90  | 25       | 20       |
     // +-----------------------------+-----+----------+----------+
     
+    // Relevant channel models for ThreeGpp scenarios
+    // RMa
+    // UMa
+    // UMi
+    // InH-OfficeMixed
+    // InH-OfficeOpen
+
+
+
+
 namespace ns3 {
 
 class NrHelper;
 
-// Contains all parameters we are setting. Command line user settable parameters are included in cellular-netwokr-user.cc
-// The rest are still set here but not user settable. 
+// Contains all parameters we are setting. Command line user settable parameters are in
+// cellular-network-user.cc; the rest are fixed defaults here.
 struct Parameters
 {
     friend std::ostream& operator<< (std::ostream& os, const Parameters& parameters);
@@ -119,9 +130,8 @@ struct Parameters
     // num of gNodeBs is set at 1 for now
     double BsHeight = 10;
     double ueHeight = 1.5;
-    std::string loadType = "none"; // none, udp, or tcp
 
-    // Simulation parameters
+    // Simulation parameters (time origins and RNG seed for this run).
     Time appGenerationTime = Seconds (5);
     Time appStartTime = MilliSeconds (500);
     Time progressInterval = Seconds (1);
@@ -142,43 +152,65 @@ struct Parameters
     // So adjust according to your numerology 
     std::string tddPattern
         = "DL|DL|DL|S|UL|DL|DL|DL|S|UL|DL|DL|DL|S|UL|DL|DL|DL|S|UL";
-    uint16_t BsTxPower = 20;
-    bool enableUlPc = true;
-    uint16_t NumberOfRaPreambles = 40;
-    bool UseIdealRrc = true;
+    uint16_t BsTxPower = 20; // dBm at the gNB.
+    bool enableUlPc = true;  // Enable UE uplink power control.
+    uint16_t NumberOfRaPreambles = 40; // Random-access preamble pool size.
+    bool UseIdealRrc = true; // Ideal RRC to avoid control-channel errors.
     uint32_t numRbPerRbg = 5; // NR scheduler RBG size in RBs.
+    bool enableBootstrapMcsLimit = true; // Cap SR bootstrap UL grant MCS to min(estimated, 9).
     
-    // Buffer sizes 
+    // Buffer sizes (bytes).
     uint32_t rlcTxBuffSize = 80 * 1024; // default is 10240 
     uint32_t tcpUdpBuffSize = 500 * 1024; // default is 131072
 
-    // position and mobility model
+    // Position and mobility model (UEs). gNB is fixed at origin.
     double boundingBoxMinX = -45.0;
     double boundingBoxMaxX = 45.0;
     double boundingBoxMinY = -45.0;
     double boundingBoxMaxY = 45.0;
-    double uePosX = 5.0;
-    double uePosY = 0.0;
     double ueMinSpeed = 0.5;
     double ueMaxSpeed = 1.5;
 
-    // Application traffic parameters
+    // Application traffic parameters.
     // OWD = one-way delay
     bool includeUlDelayApp = true;
     bool includeDlDelayApp = true;
-    std::string direction = "ul"; // ul, dl, or both
-    double cbrLoadMbps = 10.0;
+    bool includeRttApp = false;
+    std::string traceFolder = ns3Dir + "contrib/vr-app/model/BurstGeneratorTraces/";
+    std::vector<std::string> vrTraceFiles {
+        "mc_10mbps_30fps.csv",
+        "ge_cities_10mbps_30fps.csv",
+        "ge_tour_10mbps_30fps.csv",
+        "vp_10mbps_30fps.csv",
+        "mc_10mbps_60fps.csv",
+        "ge_cities_10mbps_60fps.csv",
+        "ge_tour_10mbps_60fps.csv",
+        "vp_10mbps_60fps.csv"};
+    std::string vrTrafficType = "synthetic"; // trace, synthetic, none
+    uint16_t vrFrameRate = 30;           // allowed: 30 or 60
+    double vrTargetDataRateMbps = 10.0;
+    // vrAppProfile options: VirusPopper, Minecraft, GoogleEarthVrCities, GoogleEarthVrTour
+    std::string vrAppProfile = "VirusPopper";
+    bool createRemMap = false;
+    std::string remDirection = "DL"; // DL or UL
     // QCI priority is considered only by QoS-based schedulers such as NrMacSchedulerOfdmaQos.
     // In the stock QoS scheduler, QCI affects UE ordering, not strict per-bearer scheduling.
+    uint8_t vrBearerQci = NrEpsBearer::NGBR_LOW_LAT_EMBB; //NGBR_LOW_LAT_EMBB = priority_rank 68
     uint8_t controlBearerQci = NrEpsBearer::NGBR_LOW_LAT_EMBB; // NGBR_LOW_LAT_EMBB= priority_rank 68, NGBR_IMS=10
-    // UL MCS control: 0 keeps adaptive UL AMC; 1..27 fixes UL MCS to this value.
-    uint32_t fixUlMcs = 0;
-    bool enableBootstrapMcsLimit = true; // Cap SR bootstrap UL grant MCS to min(estimated, 9).
 
-    // UDP one way delay probes
+    // VR
+    uint16_t numUesWithVrApp = 1;
+    double vrStartTimeMin = 1;
+    double vrStartTimeMax = 3;
+
+    // UDP one-way delay probes (UL/DL).
     uint32_t delayPacketSize = 1400;
-    Time delayInterval = Seconds (0.1);
-    Time delayIntervalJitter = MilliSeconds (3);
+    Time delayInterval = Seconds (0.05);
+    Time delayIntervalJitter = MilliSeconds(3); // +/- jitter added to delayInterval.
+
+    // UDP echo
+    uint32_t echoPacketSize = 1400;
+    Time echoInterPacketInterval = Seconds (0.1);
 
     void ApplyScenarioDefaults()
     {
@@ -209,6 +241,7 @@ struct Parameters
             boundingBoxMaxX = 45.0;
             boundingBoxMinY = -45.0;
             boundingBoxMaxY = 45.0;
+            vrBearerQci = 0;
             controlBearerQci = 0;
             return;
         }
@@ -218,18 +251,29 @@ struct Parameters
     // Validate whether the parameters set are acceptable
     bool Validate () const
     {
-        std::string dir = direction;
-        std::transform(dir.begin(), dir.end(), dir.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        NS_ABORT_MSG_IF(!(dir == "ul" || dir == "dl" || dir == "both"),
-                        "direction must be 'ul', 'dl', or 'both'");
-        std::string load = loadType;
-        std::transform(load.begin(), load.end(), load.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        NS_ABORT_MSG_IF(!(load == "none" || load == "udp" || load == "tcp"),
-                        "loadType must be 'none', 'udp', or 'tcp'");
-        NS_ABORT_MSG_IF(fixUlMcs > 27,
-                        "fixUlMcs must be 0 (adaptive) or in [1,27] for NrEesmCcT2");
+        NS_ABORT_MSG_IF(!(vrTrafficType == "trace" || vrTrafficType == "synthetic" ||
+                          vrTrafficType == "none"),
+                        "vrTrafficType must be 'trace', 'synthetic', or 'none'");
+        if (vrTrafficType == "trace")
+        {
+            NS_ABORT_MSG_IF(vrFrameRate != 30 && vrFrameRate != 60,
+                            "Trace VR frame rate must be 30 or 60 fps");
+        }
+        if (vrTrafficType == "synthetic")
+        {
+            NS_ABORT_MSG_IF(vrFrameRate != 30 && vrFrameRate != 60,
+                            "Synthetic VR frame rate must be 30 or 60 fps");
+            NS_ABORT_MSG_IF(vrTargetDataRateMbps <= 0.0,
+                            "Synthetic VR target data rate must be positive");
+        }
+        if (createRemMap)
+        {
+            std::string remDir = remDirection;
+            std::transform(remDir.begin(), remDir.end(), remDir.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            NS_ABORT_MSG_IF(!(remDir == "dl" || remDir == "ul"),
+                            "remDirection must be 'DL' or 'UL'");
+        }
         return true;
     }
 };
@@ -243,7 +287,7 @@ void CellularNetwork (const Parameters& params);
 const Time appStartWindow = MilliSeconds (500);
 
 
-#ifdef DELAY_BENCHMARKING_IMPLEMENTATION
+#ifdef CELLULAR_NETWORK_IMPLEMENTATION
 NodeContainer gnbNodes;
 NodeContainer ueNodes;
 Ipv4InterfaceContainer ueIpIfaces;
@@ -253,6 +297,7 @@ TraceStreams traceStreams;
 #define NR_TRACE_STREAM_ALIAS_DEF(name) Ptr<OutputStreamWrapper>& name = traceStreams.name;
 NR_TRACE_STREAM_FIELDS(NR_TRACE_STREAM_ALIAS_DEF)
 #undef NR_TRACE_STREAM_ALIAS_DEF
+std::unordered_map<uint16_t, uint32_t> g_rttNextSeqPerUe;
 std::unordered_map<uint32_t, uint16_t> g_nodeIdToUeId;
 std::unordered_map<uint16_t, uint64_t> g_rntiToImsi;
 std::unordered_map<uint16_t, uint16_t> g_rntiToCellId;
@@ -268,6 +313,7 @@ extern TraceStreams traceStreams;
 #define NR_TRACE_STREAM_ALIAS_DECL(name) extern Ptr<OutputStreamWrapper>& name;
 NR_TRACE_STREAM_FIELDS(NR_TRACE_STREAM_ALIAS_DECL)
 #undef NR_TRACE_STREAM_ALIAS_DECL
+extern std::unordered_map<uint16_t, uint32_t> g_rttNextSeqPerUe;
 extern std::unordered_map<uint32_t, uint16_t> g_nodeIdToUeId;
 extern std::unordered_map<uint16_t, uint64_t> g_rntiToImsi;
 extern std::unordered_map<uint16_t, uint16_t> g_rntiToCellId;
@@ -325,7 +371,6 @@ ResolveImsiFromPath(const std::string& path, uint16_t rnti)
     return imsi;
 }
 
-
 /***************************
  * Function Declarations
  ***************************/
@@ -342,17 +387,18 @@ void NotifyConnectionEstablishedUe (std::string context, uint64_t imsi,
                                uint16_t cellid, uint16_t rnti);
 void NotifyConnectionEstablishedEnb (std::string context, uint64_t imsi,
                                 uint16_t cellid, uint16_t rnti);
+void LogPosition (Ptr<OutputStreamWrapper> stream);
 void udpServerTrace(std::pair<uint16_t, uint16_t> DelayPortNums,
                 const Ptr<Node> &remoteHost,
                 std::string context,
                 Ptr<const Packet> packet, 
                const Address &from, const Address &localAddress);
 void DlRxTbTraceCallback(Ptr<OutputStreamWrapper> stream,
-                             std::string context,
-                             RxPacketTraceParams params);
+                         std::string context,
+                         RxPacketTraceParams params);
 void UlRxTbTraceCallback(Ptr<OutputStreamWrapper> stream,
-                             std::string context,
-                             RxPacketTraceParams params);
+                         std::string context,
+                         RxPacketTraceParams params);
 void DlRxTbComponentTraceCallback(Ptr<OutputStreamWrapper> stream,
                                   std::string context,
                                   RxPacketTraceParams params,
@@ -369,14 +415,6 @@ void UlRxTbComponentTraceCallback(Ptr<OutputStreamWrapper> stream,
                                   uint32_t rxPduBytes,
                                   uint32_t pktId,
                                   uint32_t componentBytes);
-void MacTbDelayTraceCallback(Ptr<OutputStreamWrapper> stream,
-                             std::string context,
-                             uint16_t cellId,
-                             uint16_t rnti,
-                             uint8_t bwpId,
-                             bool isDownlink,
-                             uint64_t delayNs,
-                             uint32_t ipId); // codex added
 void DlDataSinrTraceCallback(Ptr<OutputStreamWrapper> stream,
                              std::string context,
                              uint16_t cellId,
@@ -510,12 +548,19 @@ void delayTrace (Ptr<OutputStreamWrapper> stream,
                 const Ptr<Node> &remoteHost,
                 std::string context,
                 Ptr<const Packet> packet, const Address &from, const Address &localAddress);
-void loadTrace (Ptr<OutputStreamWrapper> stream,
-                const std::string& proto,
-                std::string context,
-                Ptr<const Packet> packet,
-                const Address& from,
-                const Address& localAddress);
+void rttTrace (Ptr<OutputStreamWrapper> stream,
+                std::string context, 
+                Ptr<const Packet> packet, const Address &from, const Address &localAddress);
+void StampEchoClientPacket(uint16_t ueId,
+                           Ptr<const Packet> packet,
+                           const Address& local,
+                           const Address& remote);
+void BurstRx (Ptr<OutputStreamWrapper> stream,
+                std::string context, Ptr<const Packet> burst, const Address &from, const Address &to,
+         const SeqTsSizeFragHeader &header);
+void FragmentRx (Ptr<OutputStreamWrapper> stream,
+                std::string context, Ptr<const Packet> fragment, const Address &from, const Address &to,
+         const SeqTsSizeFragHeader &header);    
 void GnbBsrTrace(Ptr<OutputStreamWrapper> stream,
                  std::string path,
                  const SfnSf sfn,
@@ -526,23 +571,25 @@ void GnbBsrTrace(Ptr<OutputStreamWrapper> stream,
     
     
 std::pair<ApplicationContainer, Time> 
+InstallUdpEchoApps (const Ptr<Node> &ue,
+             UdpEchoClientHelper *echoClient, Time appStartTime,
+             const Ptr<UniformRandomVariable> &x,
+             Time appGenerationTime);
+std::pair<ApplicationContainer, Time> 
 InstallUlDelayTrafficApps (const Ptr<Node> &ue,
+             UdpClientHelper *ulDelayClient,
+             const Ptr<Node> &remoteHost,
              const Ipv4Address &remoteHostAddr, uint16_t remotePort, Time appStartTime,
              const Ptr<UniformRandomVariable> &x,
-             Time appGenerationTime,
-             uint32_t packetSize,
-             Time interval,
-             Time jitter);
+             Time appGenerationTime);
 std::pair<ApplicationContainer, Time> 
 InstallDlDelayTrafficApps (const Ptr<Node> &ue,
              const Ipv4Address &ueAddress,
+             UdpClientHelper *dlDelayClient,
              const Ptr<Node> &remoteHost,
              uint16_t remotePort, Time appStartTime,
              const Ptr<UniformRandomVariable> &x,
-             Time appGenerationTime,
-             uint32_t packetSize,
-             Time interval,
-             Time jitter);
+             Time appGenerationTime);
 void CreateTraceFiles (void);
 void InitializeCellBwpNumRbPerRbg(const NetDeviceContainer& gnbNetDev);
 void SetupDlMacPrbLogging();
@@ -550,34 +597,12 @@ void SetupUlMacPrbLogging();
 void SetupNrTraces(const NetDeviceContainer& gnbNetDev, const Ptr<NrHelper>& helper);
 void SetupSrsSinrLogging(const NetDeviceContainer& gnbNetDev, Ptr<NrHelper> helper);
 std::string DciTypeToString(DciInfoElementTdma::VarTtiType type);
-const char* SrStateToString(NrUeMac::SrBsrMachine state);
-void UeMacCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
-                      const SfnSf sfn,
-                      uint16_t nodeId,
-                      uint16_t rnti,
-                      uint8_t bwpId,
-                      Ptr<const NrControlMessage> msg);
 void UePhyCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
                       const SfnSf sfn,
                       uint16_t nodeId,
                       uint16_t rnti,
                       uint8_t bwpId,
                       Ptr<const NrControlMessage> msg);
-void UeMacStateTrace(
-    Ptr<OutputStreamWrapper> stream,
-    const SfnSf sfn,
-    uint16_t nodeId,
-    uint16_t rnti,
-    uint8_t bwpId,
-    NrUeMac::SrBsrMachine srState,
-    std::unordered_map<uint8_t, NrMacSapProvider::BufferStatusReportParameters> ulBsrReceived,
-    int retx,
-    std::string nameFunc);
-void UeMacRaTimeoutTrace(Ptr<OutputStreamWrapper> stream,
-                         uint64_t imsi,
-                         bool contention,
-                         uint8_t preambleTxCount,
-                         uint8_t preambleTxMax);
 void DlDciTrace(std::string path,
                 const SfnSf sfn,
                 uint16_t cellId,
@@ -598,7 +623,7 @@ void SrsSinrReport(uint16_t cellId, uint16_t rnti, double sinrLinear);
 
 #include "nr-trace-common.h"
 
-#ifdef DELAY_BENCHMARKING_IMPLEMENTATION
+#ifdef CELLULAR_NETWORK_IMPLEMENTATION
 
 struct UeTraceIds
 {
@@ -853,6 +878,33 @@ ConnectPdcpRlcTracesGnb(std::string context, uint64_t imsi, uint16_t cellId, uin
  * Trace callbacks 
  ***************************/
 
+void 
+LogPosition(Ptr<OutputStreamWrapper> stream)
+{
+    if (!IsStreamReady(stream))
+    {
+        return;
+    }
+
+    for (uint32_t ueId = 0; ueId < ueNodes.GetN(); ++ueId)
+    {
+        Ptr<Node> ueNode = ueNodes.Get(ueId);
+        Ptr<MobilityModel> mobModel = ueNode->GetObject<MobilityModel>();
+        Vector pos = mobModel->GetPosition();
+        Vector vel = mobModel->GetVelocity();
+        const auto ids = MakeUeTraceIds(ueId);
+
+        *stream->GetStream() << Simulator::Now().GetMicroSeconds() << "\t" << ids.ueId << "\t"
+                             << ids.imsi << "\t" << ids.cellId << "\t" << ids.rnti << "\t"
+                             << pos.x << "\t" << pos.y << "\t" << pos.z << "\t" << vel.x << "\t"
+                             << vel.y << "\t" << vel.z << std::endl;
+    }
+    Simulator::Schedule(MilliSeconds(500), &LogPosition, stream);
+}
+
+
+    
+    
 // Trace Callback for UdpServer used by the delay measurement app
 // since they both use UdpServers
 void
@@ -917,53 +969,120 @@ delayTrace(Ptr<OutputStreamWrapper> stream,
                          << (Simulator::Now() - seqTs.GetTs()).GetMicroSeconds() << std::endl;
 }
 
-// PacketSink trace for background load traffic (TCP/UDP) on remoteHost.
+// Common trace callbacks are shared in nr-trace-common.h.
+
 void
-loadTrace(Ptr<OutputStreamWrapper> stream,
-          const std::string& proto,
-          std::string context,
-          Ptr<const Packet> packet,
-          const Address& from,
-          const Address& localAddress)
+rttTrace(Ptr<OutputStreamWrapper> stream,
+         std::string context,
+         Ptr<const Packet> packet,
+         const Address& from,
+         const Address& localAddress)
 {
-    if (!IsStreamReady(stream))
+    Ptr<Packet> packetCopy = packet->Copy();
+    SeqTsHeader seqTs;
+    if (!packetCopy->PeekHeader(seqTs))
     {
         return;
     }
-
-    const uint16_t nodeId = GetNodeIdFromContext(context);
-    const uint64_t nowUs = static_cast<uint64_t>(Simulator::Now().GetMicroSeconds());
-
-    std::string srcAddr = "-";
-    uint16_t srcPort = 0;
-    std::string dstAddr = "-";
-    uint16_t dstPort = 0;
-    auto addrToString = [](const Ipv4Address& addr) -> std::string {
-        std::ostringstream oss;
-        addr.Print(oss);
-        return oss.str();
-    };
-    if (InetSocketAddress::IsMatchingType(from))
+    packetCopy->RemoveHeader(seqTs);
+    const auto ids = MakeUeTraceIdsFromContext(context);
+    if (!InetSocketAddress::IsMatchingType(from))
     {
-        InetSocketAddress src = InetSocketAddress::ConvertFrom(from);
-        srcAddr = addrToString(src.GetIpv4());
-        srcPort = src.GetPort();
+        return;
     }
-    if (InetSocketAddress::IsMatchingType(localAddress))
-    {
-        InetSocketAddress dst = InetSocketAddress::ConvertFrom(localAddress);
-        dstAddr = addrToString(dst.GetIpv4());
-        dstPort = dst.GetPort();
-    }
-
-    *stream->GetStream() << nowUs << "\t" << proto << "\t"
-                         << nodeId << "\t" << srcAddr << "\t"
-                         << srcPort << "\t" << dstAddr << "\t"
-                         << dstPort << "\t" << packet->GetSize()
-                         << std::endl;
+    *stream->GetStream() << Simulator::Now().GetMicroSeconds() << "\t" << ids.ueId << "\t"
+                         << ids.imsi << "\t" << ids.cellId << "\t" << ids.rnti << "\t"
+                         << packetCopy->GetSize() << "\t" << seqTs.GetSeq() << "\t"
+                         << packetCopy->GetUid() << "\t" << seqTs.GetTs().GetMicroSeconds() << "\t"
+                         << (Simulator::Now() - seqTs.GetTs()).GetMicroSeconds() << std::endl;
 }
 
-// Common trace callbacks are shared in nr-trace-common.h.
+void
+StampEchoClientPacket(uint16_t ueId,
+                      Ptr<const Packet> packet,
+                      const Address& local,
+                      const Address& remote)
+{
+    SeqTsHeader header;
+    uint32_t& nextSeq = g_rttNextSeqPerUe[ueId];
+    header.SetSeq(nextSeq++);
+    auto rawPacket = const_cast<Packet*>(PeekPointer(packet));
+    rawPacket->AddHeader(header);
+}
+
+void
+BurstRx (Ptr<OutputStreamWrapper> stream, std::string context,
+         Ptr<const Packet> burst, const Address &from, const Address &to,
+         const SeqTsSizeFragHeader &header)
+{
+    uint16_t ueId = 0;
+    const uint16_t nodeId = GetNodeIdFromContext(context);
+    if (nodeId >= gnbNodes.GetN () && nodeId < (gnbNodes.GetN () + ueNodes.GetN ()))
+    {
+        // Burst sink installed directly on a UE (downlink VR traffic)
+        ueId = GetUeIdFromNodeId(nodeId);
+    }
+    else
+    {
+        // Burst sink installed elsewhere (e.g., remote host) so the packet came from a UE
+        if (!InetSocketAddress::IsMatchingType(from))
+        {
+            return;
+        }
+        ueId = GetUeNodeIdFromIpAddr(from, &ueNodes, &ueIpIfaces);
+    }
+    const auto ids = MakeUeTraceIds(ueId);
+    Time now = Simulator::Now ();
+    *stream->GetStream()
+        << now.GetMicroSeconds () //tstamp_us
+        << "\t" << ids.ueId 
+        << "\t" << ids.imsi
+        << "\t" << ids.cellId
+        << "\t" << ids.rnti
+        << "\t" << header.GetSeq () // burst seqnum
+        << "\t" << header.GetSize () //burst size 
+        << "\t" << header.GetFrags () // total num of fragments in this burst
+        << std::endl;
+}    
+
+void
+FragmentRx (Ptr<OutputStreamWrapper> stream, std::string context,
+            Ptr<const Packet> fragment, const Address &from, const Address &to,
+         const SeqTsSizeFragHeader &header)
+{
+    uint16_t ueId = 0;
+    const uint16_t nodeId = GetNodeIdFromContext(context);
+    if (nodeId >= gnbNodes.GetN () && nodeId < (gnbNodes.GetN () + ueNodes.GetN ()))
+    {
+        ueId = GetUeIdFromNodeId(nodeId);
+    }
+    else
+    {
+        if (!InetSocketAddress::IsMatchingType(from))
+        {
+            return;
+        }
+        ueId = GetUeNodeIdFromIpAddr(from, &ueNodes, &ueIpIfaces);
+    }
+    const auto ids = MakeUeTraceIds(ueId);
+    Time now = Simulator::Now ();
+    *stream->GetStream()
+        << now.GetMicroSeconds () //tstamp_us
+        << "\t" << ids.ueId 
+        << "\t" << ids.imsi
+        << "\t" << ids.cellId
+        << "\t" << ids.rnti
+        << "\t" << header.GetSeq () // burst seq num
+        << "\t" << header.GetSize () // burst size
+        << "\t" << header.GetFrags () // total num of fragments in this burst 
+        << "\t" << header.GetFragSeq () // fragment seq num
+        << "\t" << header.GetTs().GetMicroSeconds () // Tx time of the fragment     
+        << "\t" << (now - header.GetTs ()).GetMicroSeconds () // delay to receive this fragment
+        // NOTE: You cannnot sum fragment delays to get burst delay since 
+        // many fragments are not sent one after the other and instead in a burst, 
+        // so many fragments could be scheduled together  
+        << std::endl;
+}    
 
 void
 GnbBsrTrace(Ptr<OutputStreamWrapper> stream,
@@ -1099,21 +1218,8 @@ SetupNrTraces(const NetDeviceContainer& gnbNetDev, const Ptr<NrHelper>& helper)
     Config::Connect("/NodeList/*/DeviceList/*/BandwidthPartMap/*/NrGnbMac/GnbMacRxedCtrlMsgsTrace",
                     MakeBoundCallback(&GnbBsrTrace, gnbBsrStream));
     Config::ConnectWithoutContext(
-        "/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUeMac/UeMacTxedCtrlMsgsTrace",
-        MakeBoundCallback(&UeMacCtrlTxTrace, ueMacCtrlTxStream));
-    Config::ConnectWithoutContext(
         "/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUePhy/UePhyTxedCtrlMsgsTrace",
         MakeBoundCallback(&UePhyCtrlTxTrace, uePhyCtrlTxStream));
-    Config::ConnectWithoutContext(
-        "/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUeMac/UeMacStateMachineTrace",
-        MakeBoundCallback(&UeMacStateTrace, ueMacStateStream));
-    Config::ConnectWithoutContext(
-        "/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUeMac/RaResponseTimeout",
-        MakeBoundCallback(&UeMacRaTimeoutTrace, ueMacRaTimeoutStream));
-    Config::Connect("/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUePhy/SpectrumPhy/MacTbDelay",
-                    MakeBoundCallback(&MacTbDelayTraceCallback, dlMacTbDelayStream));
-    Config::Connect("/NodeList/*/DeviceList/*/BandwidthPartMap/*/NrGnbPhy/SpectrumPhy/MacTbDelay",
-                    MakeBoundCallback(&MacTbDelayTraceCallback, ulMacTbDelayStream));
     SetupDlMacPrbLogging();
     SetupUlMacPrbLogging();
     SetupSrsSinrLogging(gnbNetDev, helper);
@@ -1159,34 +1265,6 @@ SetupSrsSinrLogging(const NetDeviceContainer& gnbNetDev, Ptr<NrHelper> helper)
 }
 
 void
-UeMacCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
-                 const SfnSf sfn,
-                 uint16_t nodeId,
-                 uint16_t rnti,
-                 uint8_t bwpId,
-                 Ptr<const NrControlMessage> msg)
-{
-    if (!IsStreamReady(stream))
-    {
-        return;
-    }
-    if (msg == nullptr)
-    {
-        return;
-    }
-
-    const uint16_t ueId = GetUeIdFromNodeId(nodeId);
-    const auto ids = MakeUeTraceIds(ueId);
-    const uint16_t traceRnti = (rnti != 0) ? rnti : ids.rnti;
-    *stream->GetStream()
-        << Simulator::Now().GetMicroSeconds() << "\t" << nodeId << "\t" << ueId << "\t"
-        << ids.imsi << "\t" << ids.cellId << "\t" << traceRnti << "\t"
-        << static_cast<uint32_t>(bwpId) << "\t" << static_cast<uint32_t>(sfn.GetFrame()) << "\t"
-        << static_cast<uint32_t>(sfn.GetSubframe()) << "\t" << static_cast<uint32_t>(sfn.GetSlot())
-        << "\t" << ControlMsgTypeToString(msg->GetMessageType()) << std::endl;
-}
-
-void
 UePhyCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
                  const SfnSf sfn,
                  uint16_t nodeId,
@@ -1211,75 +1289,6 @@ UePhyCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
         << static_cast<uint32_t>(bwpId) << "\t" << static_cast<uint32_t>(sfn.GetFrame()) << "\t"
         << static_cast<uint32_t>(sfn.GetSubframe()) << "\t" << static_cast<uint32_t>(sfn.GetSlot())
         << "\t" << ControlMsgTypeToString(msg->GetMessageType()) << std::endl;
-}
-
-const char*
-SrStateToString(NrUeMac::SrBsrMachine state)
-{
-    switch (state)
-    {
-    case NrUeMac::INACTIVE:
-        return "INACTIVE";
-    case NrUeMac::TO_SEND:
-        return "TO_SEND";
-    case NrUeMac::ACTIVE:
-        return "ACTIVE";
-    }
-    return "UNKNOWN";
-}
-
-void
-UeMacStateTrace(
-    Ptr<OutputStreamWrapper> stream,
-    const SfnSf sfn,
-    uint16_t nodeId,
-    uint16_t rnti,
-    uint8_t bwpId,
-    NrUeMac::SrBsrMachine srState,
-    std::unordered_map<uint8_t, NrMacSapProvider::BufferStatusReportParameters> ulBsrReceived,
-    int retx,
-    std::string nameFunc)
-{
-    if (!IsStreamReady(stream))
-    {
-        return;
-    }
-
-    const uint16_t ueId = GetUeIdFromNodeId(nodeId);
-    const auto ids = MakeUeTraceIds(ueId);
-    uint64_t totalBufBytes = 0;
-    for (const auto& entry : ulBsrReceived)
-    {
-        const auto& params = entry.second;
-        totalBufBytes += params.txQueueSize;
-        totalBufBytes += params.retxQueueSize;
-        totalBufBytes += params.statusPduSize;
-    }
-
-    *stream->GetStream()
-        << Simulator::Now().GetMicroSeconds() << "\t" << nodeId << "\t" << ueId << "\t"
-        << ids.imsi << "\t" << ids.cellId << "\t" << rnti << "\t"
-        << static_cast<uint32_t>(bwpId) << "\t" << static_cast<uint32_t>(sfn.GetFrame()) << "\t"
-        << static_cast<uint32_t>(sfn.GetSubframe()) << "\t" << static_cast<uint32_t>(sfn.GetSlot())
-        << "\t" << SrStateToString(srState) << "\t" << totalBufBytes << "\t" << retx << "\t"
-        << nameFunc << std::endl;
-}
-
-void
-UeMacRaTimeoutTrace(Ptr<OutputStreamWrapper> stream,
-                    uint64_t imsi,
-                    bool contention,
-                    uint8_t preambleTxCount,
-                    uint8_t preambleTxMax)
-{
-    if (!IsStreamReady(stream))
-    {
-        return;
-    }
-    *stream->GetStream()
-        << Simulator::Now().GetMicroSeconds() << "\t" << imsi << "\t"
-        << static_cast<uint32_t>(contention) << "\t" << static_cast<uint32_t>(preambleTxCount)
-        << "\t" << static_cast<uint32_t>(preambleTxMax) << std::endl;
 }
 
 std::string
@@ -1444,98 +1453,108 @@ SrsSinrReport(uint16_t cellId, uint16_t rnti, double sinrLinear)
                                 << rnti << "\t" << sinrDb << std::endl;
 }
     
+/***********************************************
+ * Install client applications
+ **********************************************/
+
+std::pair<ApplicationContainer, Time>
+InstallUdpEchoApps (const Ptr<Node> &ue,
+             UdpEchoClientHelper *echoClient, Time appStartTime,
+             const Ptr<UniformRandomVariable> &x,
+             Time appGenerationTime)
+{
+  ApplicationContainer app;
+  app = echoClient->Install (ue);
+  double start = x->GetValue (appStartTime.GetMilliSeconds (),
+                              (appStartTime + appStartWindow).GetMilliSeconds ());
+  Time startTime = MilliSeconds (start);
+  app.Start (startTime);
+  app.Stop (startTime + appGenerationTime);
+  return std::make_pair (app, startTime);
+}
+
 class JitteredUdpClient : public Application
 {
   public:
     JitteredUdpClient()
-        : m_size(1024),
-          m_interval(Seconds(1)),
+        : m_socket(nullptr),
+          m_size(0),
+          m_interval(Seconds(0)),
           m_jitter(Seconds(0)),
-          m_sent(0)
+          m_sent(0),
+          m_rng(CreateObject<UniformRandomVariable>())
     {
-        m_rng = CreateObject<UniformRandomVariable>();
     }
 
-    void SetRemote(const Address& addr)
+    void SetRemote(Address peer)
     {
-        m_peer = addr;
+      m_peer = peer;
     }
 
     void SetPacketSize(uint32_t size)
     {
-        m_size = size;
+      m_size = size;
     }
 
     void SetInterval(Time interval)
     {
-        m_interval = interval;
+      m_interval = interval;
     }
 
     void SetJitter(Time jitter)
     {
-        m_jitter = jitter;
+      m_jitter = jitter;
     }
 
   private:
     void StartApplication() override
     {
-        if (!m_socket)
+      if (!m_socket)
+      {
+        m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
+        if (InetSocketAddress::IsMatchingType(m_peer))
         {
-            auto tid = TypeId::LookupByName("ns3::UdpSocketFactory");
-            m_socket = Socket::CreateSocket(GetNode(), tid);
-            NS_ABORT_MSG_IF(m_peer.IsInvalid(), "Remote address not properly set");
-            if (InetSocketAddress::IsMatchingType(m_peer))
-            {
-                if (m_socket->Bind() == -1)
-                {
-                    NS_FATAL_ERROR("Failed to bind socket");
-                }
-            }
-            else if (Inet6SocketAddress::IsMatchingType(m_peer))
-            {
-                if (m_socket->Bind6() == -1)
-                {
-                    NS_FATAL_ERROR("Failed to bind socket");
-                }
-            }
-            else
-            {
-                NS_ASSERT_MSG(false, "Incompatible address type: " << m_peer);
-            }
-            m_socket->Connect(m_peer);
-            m_socket->SetRecvCallback(MakeNullCallback<void, Ptr<Socket>>());
-            m_socket->SetAllowBroadcast(true);
+          m_socket->Bind();
         }
-        m_sendEvent = Simulator::Schedule(Seconds(0), &JitteredUdpClient::Send, this);
+        else if (Inet6SocketAddress::IsMatchingType(m_peer))
+        {
+          m_socket->Bind6();
+        }
+        m_socket->Connect(m_peer);
+      }
+      m_sendEvent = Simulator::Schedule(Seconds(0), &JitteredUdpClient::Send, this);
     }
 
     void StopApplication() override
     {
-        Simulator::Cancel(m_sendEvent);
+      Simulator::Cancel(m_sendEvent);
+      if (m_socket)
+      {
+        m_socket->Close();
+        m_socket = nullptr;
+      }
     }
 
     void Send()
     {
-        NS_ASSERT(m_sendEvent.IsExpired());
-        SeqTsHeader seqTs;
-        seqTs.SetSeq(m_sent);
-        NS_ABORT_IF(m_size < seqTs.GetSerializedSize());
-        auto p = Create<Packet>(m_size - seqTs.GetSerializedSize());
-        p->AddHeader(seqTs);
-        m_socket->Send(p);
-        ++m_sent;
+      Ptr<Packet> p = Create<Packet>(m_size);
+      SeqTsHeader header;
+      header.SetSeq(m_sent++);
+      p->AddHeader(header);
+      m_socket->Send(p);
 
-        double jitterSeconds = 0.0;
-        if (m_jitter.IsPositive())
-        {
-            jitterSeconds = m_rng->GetValue(-m_jitter.GetSeconds(), m_jitter.GetSeconds());
-        }
-        Time next = m_interval + Seconds(jitterSeconds);
-        if (next <= MicroSeconds(0))
-        {
-            next = MicroSeconds(1);
-        }
-        m_sendEvent = Simulator::Schedule(next, &JitteredUdpClient::Send, this);
+      Time next = m_interval;
+      if (!m_jitter.IsZero())
+      {
+        const double jitterUs = m_jitter.GetMicroSeconds();
+        const double offsetUs = m_rng->GetValue(-jitterUs, jitterUs);
+        next += MicroSeconds(static_cast<int64_t>(offsetUs));
+      }
+      if (next.IsNegative())
+      {
+        next = Seconds(0);
+      }
+      m_sendEvent = Simulator::Schedule(next, &JitteredUdpClient::Send, this);
     }
 
     Ptr<Socket> m_socket;
@@ -1548,11 +1567,9 @@ class JitteredUdpClient : public Application
     Ptr<UniformRandomVariable> m_rng;
 };
 
- /***********************************************
- * Install client applications
- **********************************************/
 std::pair<ApplicationContainer, Time>
 InstallUlDelayTrafficApps (const Ptr<Node> &ue,
+             const Ptr<Node> &remoteHost,
              const Ipv4Address &remoteHostAddr, uint16_t remotePort, Time appStartTime,
              const Ptr<UniformRandomVariable> &x,
              Time appGenerationTime,
@@ -1610,6 +1627,11 @@ InstallDlDelayTrafficApps (const Ptr<Node> &ue,
  **********************************************/
 void CreateTraceFiles (void)
 {
+    // Position and velocity trace
+    mobStream = traceHelper.CreateFileStream ("mobility_trace.txt");
+    WriteHeader(mobStream,
+                "time_us\tue_id\timsi\tcell_id\trnti\tpos_x\tpos_y\tpos_z\tvel_x\tvel_y\tvel_z");
+
     simInfoStream = traceHelper.CreateFileStream ("sim_info.txt"); 
 
     if (global_params.includeUlDelayApp || global_params.includeDlDelayApp)
@@ -1619,11 +1641,22 @@ void CreateTraceFiles (void)
                     "time_us\tdirection\tue_id\timsi\tcell_id\trnti\tpkt_size\tseq_num\tpkt_uid\t"
                     "tx_time_us\tdelay_us");
     }
-    if (global_params.loadType != "none")
+    if (global_params.includeRttApp)
     {
-        loadTraceStream = traceHelper.CreateFileStream("load_trace.txt");
-        WriteHeader(loadTraceStream,
-                    "time_us\tproto\tnode_id\tsrc_ip\tsrc_port\tdst_ip\tdst_port\tpacket_size");
+        rttStream = traceHelper.CreateFileStream ("rtt_trace.txt");
+        WriteHeader(rttStream,
+                    "time_us\tue_id\timsi\tcell_id\trnti\tpkt_size\tseq_num\tpkt_uid\t"
+                    "tx_time_us\tdelay_us");
+    }
+    if (global_params.vrTrafficType != "none")
+    {
+        fragmentRxStream = traceHelper.CreateFileStream ("vrFragment_trace.txt");
+        WriteHeader(fragmentRxStream,
+                    "time_us\tue_id\timsi\tcell_id\trnti\tburst_seq\tburst_size\tnum_frags\t"
+                    "frag_seq\ttx_time_us\tdelay_us");
+        burstRxStream = traceHelper.CreateFileStream ("vrBurst_trace.txt");
+        WriteHeader(burstRxStream,
+                    "time_us\tue_id\timsi\tcell_id\trnti\tburst_seq\tburst_size\tnum_frags");
     }
     dlRxTbTraceStream = traceHelper.CreateFileStream("DlRxTbTrace.txt");
     WriteHeader(dlRxTbTraceStream,
@@ -1681,12 +1714,6 @@ void CreateTraceFiles (void)
     ulRlcTxComponentStream = traceHelper.CreateFileStream("NrUlRlcTxComponentStats.txt");
     WriteHeader(ulRlcTxComponentStream,
                 "time_us\tcell_id\trnti\tlcid\trlc_sn\trlc_pdu_bytes\tpkt_id\tcomponent_bytes");
-    dlMacTbDelayStream = traceHelper.CreateFileStream("DlMacTbDelayTrace.txt"); // codex added
-    WriteHeader(dlMacTbDelayStream,
-                "time_us\tcell_id\tbwp_id\trnti\tpkt_id\tmac_tb_delay_us"); // codex added
-    ulMacTbDelayStream = traceHelper.CreateFileStream("UlMacTbDelayTrace.txt"); // codex added
-    WriteHeader(ulMacTbDelayStream,
-                "time_us\tcell_id\tbwp_id\trnti\tpkt_id\tmac_tb_delay_us"); // codex added
     rlcHolDelayStream = traceHelper.CreateFileStream("RlcHolDelayTrace.txt"); // codex added
     WriteHeader(rlcHolDelayStream,
                 "time_us\tcell_id\trnti\tlcid\ttx_queue_bytes\ttx_queue_hol_us\t"
@@ -1705,21 +1732,10 @@ void CreateTraceFiles (void)
     WriteHeader(gnbBsrStream,
                 "time_us\tnode_id\tbwp_id\trnti\tframe\tsubframe\tslot\tlcg\tbsr_level\t"
                 "queue_bytes");
-    ueMacCtrlTxStream = traceHelper.CreateFileStream("UeMacCtrlTxTrace.txt");
-    WriteHeader(ueMacCtrlTxStream,
-                "time_us\tnode_id\tue_id\timsi\tcell_id\trnti\tbwp_id\tframe\tsubframe\t"
-                "slot\tmsg_type");
     uePhyCtrlTxStream = traceHelper.CreateFileStream("UePhyCtrlTxTrace.txt");
     WriteHeader(uePhyCtrlTxStream,
                 "time_us\tnode_id\tue_id\timsi\tcell_id\trnti\tbwp_id\tframe\tsubframe\t"
                 "slot\tmsg_type");
-    ueMacStateStream = traceHelper.CreateFileStream("UeMacStateTrace.txt");
-    WriteHeader(ueMacStateStream,
-                "time_us\tnode_id\tue_id\timsi\tcell_id\trnti\tbwp_id\tframe\tsubframe\t"
-                "slot\tsr_state\tbuffer_bytes\tretx\tcallsite");
-    ueMacRaTimeoutStream = traceHelper.CreateFileStream("UeMacRaTimeoutTrace.txt");
-    WriteHeader(ueMacRaTimeoutStream,
-                "time_us\timsi\tcontention\tpreamble_tx_count\tpreamble_tx_max");
 
 }    
     
@@ -1730,25 +1746,43 @@ void PrintSimInfoToFile()
     *simInfoStream->GetStream() << "parameter,value\n";
     *simInfoStream->GetStream() << "gnb_count," << gnbNodes.GetN() << std::endl;
     *simInfoStream->GetStream() << "ue_count," << ueNodes.GetN() << std::endl;
+    *simInfoStream->GetStream() << "digital_twin_scenario," << global_params.digitalTwinScenario
+                                << std::endl;
+    *simInfoStream->GetStream() << "channel_scenario," << global_params.channelScenario << std::endl;
+    *simInfoStream->GetStream() << "num_ues," << global_params.numUes << std::endl;
+    *simInfoStream->GetStream() << "num_ues_with_vr_app," << global_params.numUesWithVrApp
+                                << std::endl;
+    *simInfoStream->GetStream() << "vr_traffic_type," << global_params.vrTrafficType << std::endl;
+    *simInfoStream->GetStream() << "vr_frame_rate," << global_params.vrFrameRate << std::endl;
+    *simInfoStream->GetStream() << "vr_target_data_rate_mbps,"
+                                << global_params.vrTargetDataRateMbps << std::endl;
+    *simInfoStream->GetStream() << "vr_app_profile," << global_params.vrAppProfile << std::endl;
     *simInfoStream->GetStream()
         << "simulation_time_seconds," << global_params.appGenerationTime.GetSeconds() << std::endl;
+    *simInfoStream->GetStream()
+        << "progress_interval_seconds," << global_params.progressInterval.GetSeconds() << std::endl;
     *simInfoStream->GetStream() << "rand_seed," << global_params.randSeed << std::endl;
+    *simInfoStream->GetStream() << "vr_bearer_qci," << +global_params.vrBearerQci << std::endl;
+    *simInfoStream->GetStream() << "control_bearer_qci," << +global_params.controlBearerQci
+                                << std::endl;
+    *simInfoStream->GetStream() << "enable_bootstrap_mcs_limit,"
+                                << (global_params.enableBootstrapMcsLimit ? 1 : 0) << std::endl;
+    *simInfoStream->GetStream() << "create_rem_map," << (global_params.createRemMap ? 1 : 0)
+                                << std::endl;
+    *simInfoStream->GetStream() << "rem_direction," << global_params.remDirection << std::endl;
     *simInfoStream->GetStream()
         << "ul_delay_app_installed," << (global_params.includeUlDelayApp ? 1 : 0) << std::endl;
     *simInfoStream->GetStream()
         << "dl_delay_app_installed," << (global_params.includeDlDelayApp ? 1 : 0) << std::endl;
-    *simInfoStream->GetStream() << "fix_ul_mcs,"
-                                << (global_params.fixUlMcs == 0
-                                        ? std::string("adaptive")
-                                        : std::to_string(global_params.fixUlMcs))
-                                << std::endl;
-    *simInfoStream->GetStream() << "enable_bootstrap_mcs_limit,"
-                                << (global_params.enableBootstrapMcsLimit ? 1 : 0) << std::endl;
     if (global_params.includeUlDelayApp || global_params.includeDlDelayApp)
     {
         *simInfoStream->GetStream() << "delay_pkt_interval_seconds,"
                                     << global_params.delayInterval.As(Time::S) << std::endl;
     }
+    *simInfoStream->GetStream() << "rtt_app_installed," << (global_params.includeRttApp ? 1 : 0)
+                                << std::endl;
+    *simInfoStream->GetStream()
+        << "vr_app_installed," << (global_params.vrTrafficType != "none" ? 1 : 0) << std::endl;
     std::cout << "Exiting PrintSimInfoToFile function that prints to sim_info.txt file" << std::endl;
 }
 
@@ -1757,27 +1791,23 @@ operator<< (std::ostream& os, const Parameters& parameters)
 {
     os << "Simulation parameters:\n"
        << "  numUes: " << parameters.numUes << std::endl
-       << "  loadType: " << parameters.loadType << std::endl
-       << "  direction: " << parameters.direction << std::endl
-       << "  cbrLoadMbps: " << parameters.cbrLoadMbps << std::endl
-       << "  fixUlMcs: "
-       << (parameters.fixUlMcs == 0 ? std::string("adaptive")
-                                    : std::to_string(parameters.fixUlMcs))
-       << std::endl
-       << "  enableBootstrapMcsLimit: " << parameters.enableBootstrapMcsLimit << std::endl
+       << "  numUesWithVrApp: " << parameters.numUesWithVrApp << std::endl
        << "  centralFrequencyHz: " << parameters.centralFrequencyBand << std::endl
        << "  bandwidthHz: " << parameters.bandwidthHz << std::endl
        << "  numerology: " << parameters.numerologyBwp1 << std::endl
        << "  numRbPerRbg: " << parameters.numRbPerRbg << std::endl
+       << "  enableBootstrapMcsLimit: " << parameters.enableBootstrapMcsLimit << std::endl
        << "  tddPattern: " << parameters.tddPattern << std::endl
        << "  BsTxPower: " << parameters.BsTxPower << " dBm\n"
        << "  includeUlDelayApp: " << parameters.includeUlDelayApp << std::endl
-       << "  includeDlDelayApp: " << parameters.includeDlDelayApp << std::endl;
+       << "  includeDlDelayApp: " << parameters.includeDlDelayApp << std::endl
+       << "  includeRttApp: " << parameters.includeRttApp << std::endl
+       << "  vrTrafficType: " << parameters.vrTrafficType << std::endl;
     return os;
 }
 
-#endif // DELAY_BENCHMARKING_IMPLEMENTATION
+#endif // CELLULAR_NETWORK_IMPLEMENTATION
 
 } // namespace ns3
 
-#endif // DELAY_BENCHMARKING_FUNCTION_H
+#endif // CELLULAR_NETWORK_FUNCTION_H

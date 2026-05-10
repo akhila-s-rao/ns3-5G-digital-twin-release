@@ -16,8 +16,6 @@ namespace ns3 {
     X(ulRxTbTraceStream)                     \
     X(dlRxTbComponentTraceStream)            \
     X(ulRxTbComponentTraceStream)            \
-    X(dlMacTbDelayStream)                    \
-    X(ulMacTbDelayStream)                    \
     X(dlDataSinrStream)                      \
     X(dlCtrlSinrStream)                      \
     X(dlPdcpRxStream)                        \

@@ -61,13 +61,10 @@ These scripts help setup a simulation campaign with multiple simulations in para
 Run them from the repo root or from the script directory, depending on the script.
 
 ### Data analysis, visualization and processing scripts 
-- `check_delay_component_residuals.py`  
-- `create_parsed_logs.py` 
-- `delay_decomposition.py` 
-- `trace_stats.py` 
-- `visualize_raw_data.py`
-
-TODO describe in a sentence or two what each of these scripts do
+- `compare_delay_decomposition_distributions.py`: compares ExPeCA delay-decomposition CSVs against generated 5G-LENA delay-decomposition CSVs and writes histogram, CDF, and packet-index series plots.
+- `create_parsed_uplink_data.py`: aggregates raw ns-3 trace logs into aligned per-RNTI time-window CSVs for uplink feature/metric analysis.
+- `create_delay_decomposition_data.py`: creates per-packet 5G-LENA delay-decomposition CSVs from raw 5G-LENA trace logs.
+- `visualize_raw_data.py`: generates per-RNTI raw-trace histograms, CDFs, timeseries plots, and summary text for each run.
 
 
 ## Datasets and Documentation

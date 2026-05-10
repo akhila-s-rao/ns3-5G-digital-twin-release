@@ -92,7 +92,19 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 
 **`columns_used`** = `[time_us, rnti, burst_size, num_frags]`
 
-## NR-generated traces (enabled in cellular-network.cc unless noted)
+#### `load_trace.txt (recorded at remote-host PacketSink for benchmark background load; UL)`
+- time_us: Receive time in microseconds at the background-load PacketSink.
+- proto: Transport protocol used by the background load (`TCP` or `UDP`).
+- node_id: Node ID of the sink that received the packet.
+- src_ip: Source IPv4 address.
+- src_port: Source transport port.
+- dst_ip: Destination IPv4 address.
+- dst_port: Destination transport port.
+- packet_size: Received packet size in bytes.
+
+**`columns_used`** = `[]`
+
+## NR-generated traces (enabled by both cellular network and delay benchmark unless noted)
 
 ### Logs that capture UL metrics
 
@@ -109,6 +121,21 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 - queue_bytes: Buffer size in bytes derived from bsr_level.
 
 **`columns_used`** = `[time_us, rnti, bsr_level, queue_bytes]`
+
+#### `UePhyCtrlTxTrace.txt (recorded at UE PHY; UL control)`
+- time_us: Simulation time in microseconds when the UE PHY transmits a control message.
+- node_id: UE node ID.
+- ue_id: UE index derived from the node ID.
+- imsi: IMSI for the UE.
+- cell_id: Serving cell ID for the UE.
+- rnti: UE RNTI.
+- bwp_id: BWP ID used for the control message.
+- frame: Frame number from the UE SFN/slot.
+- subframe: Subframe number from the UE SFN/slot.
+- slot: Slot number from the UE SFN/slot.
+- msg_type: UE PHY control-message type, such as scheduling request.
+
+**`columns_used`** = `[time_us, rnti, msg_type]`
 
 #### `SrsSinrTrace.txt (recorded at gNB PHY; UL)`
 - time_us: Simulation time in microseconds when the gNB PHY reports the SRS SINR.
@@ -445,25 +472,3 @@ component_bytes = rlc_pdu_bytes.
 - Same fields/semantics as DlRxTbComponentTrace.txt, but for UL TB reception at gNB PHY.
 
 **`columns_used`** = `[time_us, rx_pdu_id, rnti, lcid, tb_size, rx_pdu_bytes, rv, corrupt, pkt_id, component_bytes]`
-
-#### `DlMacTbDelayTrace.txt (recorded at UE PHY; DL)`
-- time_us: Simulation time in microseconds when the TB is successfully decoded.
-- cell_id: Serving cell ID for the TB.
-- bwp_id: BWP ID for the TB.
-- rnti: UE RNTI for the TB.
-- pkt_id: Per-node pkt_id carried as IPv4 ByteTag (0 if unavailable).
-- mac_tb_delay_us: Time from first MAC->PHY TX at the sender to successful PHY decode at the receiver
-  (includes HARQ retransmissions).
-
-**`columns_used`** = `[time_us, rnti, pkt_id, mac_tb_delay_us]`
-
-#### `UlMacTbDelayTrace.txt (recorded at gNB PHY; UL)`
-- time_us: Simulation time in microseconds when the TB is successfully decoded.
-- cell_id: Serving cell ID for the TB.
-- bwp_id: BWP ID for the TB.
-- rnti: UE RNTI for the TB.
-- pkt_id: Per-node pkt_id carried as IPv4 ByteTag (0 if unavailable).
-- mac_tb_delay_us: Time from first MAC->PHY TX at the sender to successful PHY decode at the receiver
-  (includes HARQ retransmissions).
-
-**`columns_used`** = `[time_us, rnti, pkt_id, mac_tb_delay_us]`

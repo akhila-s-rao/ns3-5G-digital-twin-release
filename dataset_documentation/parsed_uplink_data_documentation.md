@@ -1,6 +1,6 @@
 # Parsed Uplink Columns
 
-This documents the columns produced by `create_parsed_logs.py` when run with `--direction UL` (the default). The script selects logs whose configured direction contains `UL`, including mixed `UL/DL` application traces, and filters mixed-direction traces to UL when a `direction` column exists. 
+This documents the columns produced by `create_parsed_uplink_data.py` when run with `--direction UL` (the default). The script selects logs whose configured direction contains `UL`, including mixed `UL/DL` application traces, and filters mixed-direction traces to UL when a `direction` column exists. 
 
 Rows are keyed by `time_us` window start and `rnti`; `cell_id` is mapped from raw logs when available.
 
@@ -54,4 +54,3 @@ Missing logs are skipped, so a parsed CSV only contains columns for raw log file
 
 
 ## Columns common between Expeca and 5G-SMARt testbeds
-

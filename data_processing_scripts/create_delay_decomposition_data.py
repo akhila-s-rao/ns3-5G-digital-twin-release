@@ -4,13 +4,7 @@ from pathlib import Path
 import re
 
 import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
 
-FONT_SIZE = 12
-LABEL_FONT_SIZE = 14
-ANNOTATION_FONT_SIZE = 16
-TITLE_FONT_SIZE = LABEL_FONT_SIZE * 2
 DRB_LCID_MIN = 3  # SRB0/1/2 are reserved; DRB/data LCIDs start at 3.
 KNOWN_LOGS = [
     "NrUlPdcpRxStats.txt",
@@ -20,39 +14,6 @@ KNOWN_LOGS = [
     "RlcHolGrantWaitTrace.txt",
 ]
 LENA_DELAY_DECOMPOSITION_CSV = "5Glena_delay_decomposition.csv"
-EXPECA_CSV_REQUIRED_COLUMNS = {
-    "End to End Delay",
-    "Scheduling delay",
-    "Transmission delay",
-    "Retransmission delay",
-    "Queuing delay",
-    "Ran delay",
-    "segmentation delay",
-}
-BENCHMARK_TITLE_BY_RUN: dict[int, str] = {
-    1: "pkt_size=20B | inter_pkt=50ms | bg=none",
-    2: "pkt_size=50B | inter_pkt=50ms | bg=none",
-    3: "pkt_size=100B | inter_pkt=50ms | bg=none",
-    4: "pkt_size=200B | inter_pkt=50ms | bg=none",
-    5: "pkt_size=500B | inter_pkt=50ms | bg=none",
-    6: "pkt_size=1000B | inter_pkt=50ms | bg=none",
-    7: "pkt_size=1500B | inter_pkt=50ms | bg=none",
-    8: "pkt_size=2000B | inter_pkt=50ms | bg=none",
-    9: "pkt_size=100B | inter_pkt=10ms | bg=none",
-    10: "pkt_size=100B | inter_pkt=15ms | bg=none",
-    11: "pkt_size=100B | inter_pkt=20ms | bg=none",
-    12: "pkt_size=100B | inter_pkt=25ms | bg=none",
-    13: "pkt_size=100B | inter_pkt=100ms | bg=none",
-    14: "pkt_size=100B | inter_pkt=50ms | bg=udp(cbrLoad=0.0001)",
-    15: "pkt_size=100B | inter_pkt=50ms | bg=udp(cbrLoad=2.5)",
-    16: "pkt_size=100B | inter_pkt=50ms | bg=udp(cbrLoad=5)",
-    17: "pkt_size=100B | inter_pkt=50ms | bg=udp(cbrLoad=7.5)",
-    18: "pkt_size=100B | inter_pkt=50ms | bg=udp(cbrLoad=10)",
-}
-
-def empty_series() -> pd.Series:
-    return pd.Series(dtype=float)
-
 def load_tsv(path: Path) -> pd.DataFrame | None:
     if not path.exists():
         return None
@@ -84,109 +45,13 @@ def require_optional_columns(df: pd.DataFrame | None,
     return require_columns(df, label, required_cols)
 
 
-def format_annotation_value(value: float) -> str:
-    if value.is_integer():
-        return str(int(value))
-    return f"{value:.2f}"
-
-def plot_hist(values, bins, xlabel, ax):
-    values = values.dropna()
-    if values.shape[0] == 0:
-        ax.set_visible(False)
-        return
-    vmin = float(values.min())
-    vmed = float(values.median())
-    vmax = float(values.max())
-    ax.hist(values, bins=bins, edgecolor="black", alpha=0.85, density=True)
-    ax.set_xlabel(xlabel, fontsize=LABEL_FONT_SIZE)
-    ax.set_ylabel("")
-    ax.text(
-        0.98, 0.98,
-        f"min: {format_annotation_value(vmin)}\n"
-        f"med: {format_annotation_value(vmed)}\n"
-        f"max: {format_annotation_value(vmax)}",
-        ha="right", va="top", transform=ax.transAxes,
-        fontsize=ANNOTATION_FONT_SIZE,
-        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
-    )
-
-def plot_cdf(values, xlabel, ax, ylabel="CDF"):
-    values = values.dropna()
-    if values.shape[0] == 0:
-        ax.set_visible(False)
-        return
-    vmin = float(values.min())
-    vmed = float(values.median())
-    vmax = float(values.max())
-    values = np.sort(values.to_numpy())
-    y = np.linspace(0.0, 1.0, num=values.size, endpoint=True)
-    ax.plot(values, y, linewidth=0.9)
-    ax.set_xlabel(xlabel, fontsize=LABEL_FONT_SIZE)
-    ax.set_ylabel(ylabel, fontsize=LABEL_FONT_SIZE)
-    ax.text(
-        0.98, 0.98,
-        f"min: {format_annotation_value(vmin)}\n"
-        f"med: {format_annotation_value(vmed)}\n"
-        f"max: {format_annotation_value(vmax)}",
-        ha="right", va="top", transform=ax.transAxes,
-        fontsize=ANNOTATION_FONT_SIZE,
-        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
-    )
-
-def plot_timeseries(df, time_col, value_col, ax, label):
-    if df is None or time_col not in df.columns or value_col not in df.columns:
-        ax.set_visible(False)
-        return
-    series = df[[time_col, value_col]].dropna()
-    if series.empty:
-        ax.set_visible(False)
-        return
-    series = series.sort_values(time_col)
-    vmin = float(series[value_col].min())
-    vmed = float(series[value_col].median())
-    vmax = float(series[value_col].max())
-    ax.plot(series[time_col] / 1e6, series[value_col], linewidth=0.8)
-    ax.set_xlabel("Time (s)", fontsize=LABEL_FONT_SIZE)
-    ax.set_ylabel(label, fontsize=LABEL_FONT_SIZE)
-    ax.text(
-        0.98, 0.98,
-        f"min: {format_annotation_value(vmin)}\n"
-        f"med: {format_annotation_value(vmed)}\n"
-        f"max: {format_annotation_value(vmax)}",
-        ha="right", va="top", transform=ax.transAxes,
-        fontsize=ANNOTATION_FONT_SIZE,
-        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
-    )
-
-
-def plot_series_by_index(series: pd.Series, ax, label, x_label="Packet index"):
-    series = pd.to_numeric(series, errors="coerce").dropna()
-    if series.empty:
-        ax.set_visible(False)
-        return
-    vmin = float(series.min())
-    vmed = float(series.median())
-    vmax = float(series.max())
-    ax.plot(np.arange(series.size), series.to_numpy(), linewidth=0.8)
-    ax.set_xlabel(x_label, fontsize=LABEL_FONT_SIZE)
-    ax.set_ylabel(label, fontsize=LABEL_FONT_SIZE)
-    ax.text(
-        0.98, 0.98,
-        f"min: {format_annotation_value(vmin)}\n"
-        f"med: {format_annotation_value(vmed)}\n"
-        f"max: {format_annotation_value(vmax)}",
-        ha="right", va="top", transform=ax.transAxes,
-        fontsize=ANNOTATION_FONT_SIZE,
-        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7, edgecolor="none"),
-    )
-
 def has_required_logs(run_dir: Path) -> bool:
     """Return True if the directory contains any known log file."""
     return any((run_dir / name).exists() for name in KNOWN_LOGS)
 
 
 def find_run_dirs(base_dir: Path) -> list[Path]:
-    """Find run directories to plot."""
+    """Find run directories containing known 5G-LENA logs."""
     if has_required_logs(base_dir):
         return [base_dir]
     runs: list[Path] = []
@@ -194,20 +59,6 @@ def find_run_dirs(base_dir: Path) -> list[Path]:
         if entry.is_dir() and has_required_logs(entry):
             runs.append(entry)
     return runs
-
-
-def expeca_csv_has_required_columns(csv_path: Path) -> bool:
-    try:
-        cols = set(pd.read_csv(csv_path, nrows=0).columns)
-    except Exception:
-        return False
-    return EXPECA_CSV_REQUIRED_COLUMNS.issubset(cols)
-
-
-def find_expeca_csv_runs(base_dir: Path) -> list[Path]:
-    """Find ExPeCA CSV runs under a directory tree."""
-    csv_files = sorted(p for p in base_dir.rglob("*.csv") if p.is_file())
-    return [p for p in csv_files if expeca_csv_has_required_columns(p)]
 
 
 def extract_run_number(name: str) -> int | None:
@@ -229,45 +80,6 @@ def index_paths_by_run_number(paths: list[Path], label: str) -> dict[int, Path]:
             continue
         out[run_no] = path
     return out
-
-
-def load_expeca_csv_metrics(csv_path: Path) -> pd.DataFrame | None:
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception as exc:
-        print(f"WARN: failed reading ExPeCA CSV {csv_path}: {exc}")
-        return None
-    missing = EXPECA_CSV_REQUIRED_COLUMNS.difference(df.columns)
-    if missing:
-        print(f"WARN: skipping {csv_path}, missing columns: {sorted(missing)}")
-        return None
-
-    rename_map = {
-        "Packet SN": "packet_sn",
-        "Packet ID": "packet_id",
-        "Packet Length": "packet_length",
-        "No of RLC attempts": "rlc_attempts",
-        "mcs": "mcs",
-        "Max No of MAC attempts": "max_mac_attempts",
-        "segmentation delay": "segmentation_delay_ms",
-        "Retransmission delay": "retransmission_delay_ms",
-        "Transmission delay": "transmission_delay_ms",
-        "End to End Delay": "ul_end_to_end_delay_ms",
-        "Frame alignment delay": "frame_alignment_delay_ms",
-        "Scheduling delay": "scheduling_delay_ms",
-        "Ran delay": "link_delay_ms",
-        "Queuing delay": "queueing_delay_ms",
-    }
-    df = df.rename(columns=rename_map)
-    for col in rename_map.values():
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    # Match naming used for 5G-LENA-side plots in this script.
-    df["tx_retx_delay_ms"] = (
-        df.get("transmission_delay_ms", pd.Series(dtype=float)).fillna(0.0)
-        + df.get("retransmission_delay_ms", pd.Series(dtype=float)).fillna(0.0)
-    )
-    return df
 
 
 def merge_metric_column(base: pd.DataFrame,
@@ -368,6 +180,11 @@ def build_lena_delay_decomposition_table(
             "sched_delay2_ms": "scheduling_delay_ms",
         }
     )
+    residual_cols = {"ran_delay_ms", "queueing_delay_ms", "link_delay_ms"}
+    if residual_cols.issubset(table.columns):
+        table["delay_residual_ms"] = (
+            table["ran_delay_ms"] - (table["queueing_delay_ms"] + table["link_delay_ms"])
+        )
     ordered_cols = [
         "rnti",
         "pkt_id",
@@ -381,6 +198,7 @@ def build_lena_delay_decomposition_table(
         "scheduling_delay_ms",
         "tx_retx_delay_ms",
         "link_delay_ms",
+        "delay_residual_ms",
         "segmentation_delay_ms",
         "reordering_delay_ms",
         "rlc_segments_per_pkt",
@@ -389,7 +207,7 @@ def build_lena_delay_decomposition_table(
     return table[existing_ordered].sort_values(["rnti", "pkt_id"])
 
 
-def load_lena_compare_metrics(input_dir: Path) -> dict | None:
+def load_lena_delay_decomposition(input_dir: Path) -> pd.DataFrame | None:
     if not has_required_logs(input_dir):
         print(f"WARN: skipping {input_dir}, no known log files found")
         return None
@@ -428,13 +246,8 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
         print(f"WARN: skipping {input_dir}, {exc}")
         return None
 
-    df_ul_pdcp_rx_plot = None
     if df_ul_pdcp_rx is not None:
         df_ul_pdcp_rx["ran_delay_ms"] = pd.to_numeric(df_ul_pdcp_rx["delay_us"], errors="coerce") / 1000.0
-        df_ul_pdcp_rx_plot = df_ul_pdcp_rx[
-            pd.to_numeric(df_ul_pdcp_rx["pkt_id"], errors="coerce").notna()
-            & df_ul_pdcp_rx["ran_delay_ms"].notna()
-        ].copy()
 
     df_ul_rlc_plot = df_ul_rlc
     if df_ul_rlc is not None:
@@ -710,7 +523,7 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
     #                 df_reordering_delay["time_us"] = df_reordering_delay["pdcp_rx_time_us"]
     #                 df_reordering_delay = df_reordering_delay.sort_values("time_us")
 
-    delay_decomposition = build_lena_delay_decomposition_table(
+    return build_lena_delay_decomposition_table(
         df_ul_pdcp_rx,
         df_pregrant_grant_wait,
         df_frame_alignment,
@@ -722,228 +535,49 @@ def load_lena_compare_metrics(input_dir: Path) -> dict | None:
         df_rlc_segments_per_pkt,
     )
 
-    metric_items = [
-        (df_ul_pdcp_rx_plot["ran_delay_ms"]
-         if df_ul_pdcp_rx_plot is not None else empty_series(),
-         "RAN delay (ms)"),
-        (df_pregrant_grant_wait["pregrant_plus_grant_wait_ms"]
-         if df_pregrant_grant_wait is not None else empty_series(),
-         "Queueing delay (ms)"),
-        (df_frame_alignment["frame_alignment_delay_ms"]
-         if df_frame_alignment is not None else empty_series(),
-         "Frame alignment delay (ms)"),
-        (df_sched_delay2["sched_delay2_ms"]
-         if df_sched_delay2 is not None else empty_series(),
-         "Scheduling delay (ms)"),
-        # Re-enable this if HOL grant wait delay should be plotted again.
-        # (df_rlc_hol_wait["hol_wait_ms"] if df_rlc_hol_wait is not None else empty_series(),
-        #  "HOL grant wait delay (ms)"),
-        (df_ul_rlc_plot["delay_ms"]
-         if df_ul_rlc_plot is not None else empty_series(),
-         "tx + retx delay (ms)"),
-    ]
-    ts_items = [
-        (df_ul_pdcp_rx_plot
-         if df_ul_pdcp_rx_plot is not None else None,
-         "time_us", "ran_delay_ms", "RAN delay (ms)"),
-        (df_pregrant_grant_wait
-         if df_pregrant_grant_wait is not None else None,
-         "time_us", "pregrant_plus_grant_wait_ms", "Queueing delay (ms)"),
-        (df_frame_alignment
-         if df_frame_alignment is not None else None,
-         "time_us", "frame_alignment_delay_ms", "Frame alignment delay (ms)"),
-        (df_sched_delay2
-         if df_sched_delay2 is not None else None,
-         "time_us", "sched_delay2_ms", "Scheduling delay (ms)"),
-        # Re-enable this if HOL grant wait delay should be plotted again.
-        # (df_rlc_hol_wait if df_rlc_hol_wait is not None else None,
-        #  "time_us", "hol_wait_ms", "HOL grant wait delay (ms)"),
-        (df_ul_rlc_plot
-         if df_ul_rlc_plot is not None else None,
-         "time_us", "delay_ms", "tx + retx delay (ms)"),
-    ]
-    # Re-enable these if reordering delay should be plotted again.
-    # metric_items.append(
-    #     (df_reordering_delay["reordering_delay_ms"]
-    #      if df_reordering_delay is not None else empty_series(),
-    #      "Reordering delay (ms)")
-    # )
-    # ts_items.append(
-    #     (df_reordering_delay if df_reordering_delay is not None else None,
-    #      "time_us", "reordering_delay_ms", "Reordering delay (ms)")
-    # )
-    metric_items.extend([
-        (df_segmentation_delay["segmentation_delay_ms"]
-         if df_segmentation_delay is not None else empty_series(),
-         "Segmentation delay (ms)"),
-        (df_rlc_segments_per_pkt["rlc_segments_per_pkt"]
-         if df_rlc_segments_per_pkt is not None else empty_series(),
-         "RLC segments per packet"),
-    ])
-    ts_items.extend([
-        (df_segmentation_delay
-         if df_segmentation_delay is not None else None,
-         "time_us", "segmentation_delay_ms", "Segmentation delay (ms)"),
-        (df_rlc_segments_per_pkt
-         if df_rlc_segments_per_pkt is not None else None,
-         "time_us", "rlc_segments_per_pkt", "RLC segments per packet"),
-    ])
-    return {
-        "delay_decomposition": delay_decomposition,
-        "metric_items": metric_items,
-        "ts_items": ts_items,
-    }
 
-
-def build_expeca_compare_metric_items(df: pd.DataFrame) -> list[tuple[pd.Series, str]]:
-    items = [
-        (df["ul_end_to_end_delay_ms"], "UL end-to-end delay (ms)"),
-        (df["queueing_delay_ms"], "Queueing delay (ms)"),
-        (df["frame_alignment_delay_ms"], "Frame alignment delay (ms)"),
-        (df["scheduling_delay_ms"], "Scheduling delay (ms)"),
-        # Re-enable this if HOL grant wait delay should be plotted again.
-        # (empty_series(), "HOL grant wait delay (ms)"),
-        (df["tx_retx_delay_ms"], "tx + retx delay (ms)"),
-    ]
-    # Re-enable this if reordering delay should be plotted again.
-    # items.append((empty_series(), "Reordering delay (ms)"))
-    items.extend([
-        (df["segmentation_delay_ms"], "Segmentation delay (ms)"),
-        (df["rlc_attempts"], "RLC segments per packet"),
-    ])
-    return items
-
-
-def plot_compare_pair(run_no: int,
-                      expeca_csv: Path,
-                      lena_run_dir: Path,
-                      output_root: Path,
-                      csv_output_dir: Path) -> None:
-    expeca_df = load_expeca_csv_metrics(expeca_csv)
-    if expeca_df is None or expeca_df.empty:
-        print(f"WARN: skipping run{run_no:02d}, unusable ExPeCA CSV: {expeca_csv}")
-        return
-    lena = load_lena_compare_metrics(lena_run_dir)
-    if lena is None:
+def write_lena_delay_decomposition_csv(run_no: int, lena_run_dir: Path, csv_output_dir: Path) -> None:
+    delay_decomposition = load_lena_delay_decomposition(lena_run_dir)
+    if delay_decomposition is None:
         print(f"WARN: skipping run{run_no:02d}, unusable 5G-LENA logs: {lena_run_dir}")
         return
 
-    output_root.mkdir(parents=True, exist_ok=True)
     csv_output_dir.mkdir(parents=True, exist_ok=True)
-    expeca_items = build_expeca_compare_metric_items(expeca_df)
-    lena_items = lena["metric_items"]
-    lena_ts_items = lena["ts_items"]
-    lena_delay_decomposition = lena["delay_decomposition"]
-
-    run_label = f"run{run_no:02d}"
-    benchmark_desc = BENCHMARK_TITLE_BY_RUN.get(run_no)
-    compare_label = f"{run_label} | {benchmark_desc}" if benchmark_desc else run_label
-
-    cols = len(expeca_items)
-    fig, axes = plt.subplots(2, cols, figsize=(cols * 5.5, 2 * 4.7))
-    for col, ((ex_series, label1), (lena_series, label2)) in enumerate(zip(expeca_items, lena_items)):
-        plot_hist(ex_series, bins=50, xlabel=label1, ax=axes[0, col])
-        plot_hist(lena_series, bins=50, xlabel=label2, ax=axes[1, col])
-    fig.text(0.01, 0.74, "ExPeCA", rotation=90, va="center", ha="left", fontsize=LABEL_FONT_SIZE)
-    fig.text(0.01, 0.28, "5G-LENA", rotation=90, va="center", ha="left", fontsize=LABEL_FONT_SIZE)
-    fig.suptitle(f"{compare_label} | Histograms", fontsize=TITLE_FONT_SIZE, y=0.995)
-    fig.tight_layout(rect=[0.03, 0, 1, 0.95])
-    fig.savefig(output_root / f"{run_label}_histograms.png", dpi=150)
-    plt.close(fig)
-
-    fig, axes = plt.subplots(2, cols, figsize=(cols * 5.5, 2 * 4.7))
-    for col, ((ex_series, label1), (lena_series, label2)) in enumerate(zip(expeca_items, lena_items)):
-        plot_cdf(ex_series, xlabel=label1, ax=axes[0, col])
-        plot_cdf(lena_series, xlabel=label2, ax=axes[1, col])
-    fig.text(0.01, 0.74, "ExPeCA", rotation=90, va="center", ha="left", fontsize=LABEL_FONT_SIZE)
-    fig.text(0.01, 0.28, "5G-LENA", rotation=90, va="center", ha="left", fontsize=LABEL_FONT_SIZE)
-    fig.suptitle(f"{compare_label} | CDFs", fontsize=TITLE_FONT_SIZE, y=0.995)
-    fig.tight_layout(rect=[0.03, 0, 1, 0.95])
-    fig.savefig(output_root / f"{run_label}_cdf.png", dpi=150)
-    plt.close(fig)
-
-    fig, axes = plt.subplots(2, cols, figsize=(cols * 5.5, 2 * 4.7))
-    for col, ((ex_series, ex_label), (lena_df, time_col, value_col, lena_label)) in enumerate(zip(expeca_items, lena_ts_items)):
-        plot_series_by_index(ex_series, axes[0, col], ex_label)
-        plot_timeseries(lena_df, time_col, value_col, axes[1, col], lena_label)
-    fig.text(0.01, 0.74, "ExPeCA", rotation=90, va="center", ha="left", fontsize=LABEL_FONT_SIZE)
-    fig.text(0.01, 0.28, "5G-LENA", rotation=90, va="center", ha="left", fontsize=LABEL_FONT_SIZE)
-    fig.suptitle(f"{compare_label} | Series", fontsize=TITLE_FONT_SIZE, y=0.995)
-    fig.tight_layout(rect=[0.03, 0, 1, 0.95])
-    fig.savefig(output_root / f"{run_label}_series.png", dpi=150)
-    plt.close(fig)
-
     csv_path = csv_output_dir / f"benchmark{run_no:02d}_{LENA_DELAY_DECOMPOSITION_CSV}"
-    lena_delay_decomposition.to_csv(csv_path, index=False)
-    print(f"Wrote 5G-LENA delay decomposition CSV for {run_label} to {csv_path}")
-    print(f"Wrote comparison plots for {run_label} to {output_root}")
+    delay_decomposition.to_csv(csv_path, index=False)
+    print(f"Wrote 5G-LENA delay decomposition CSV for run{run_no:02d} to {csv_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot histograms from ExPeCA and 5G-LENA log roots"
-    )
-    parser.add_argument(
-        "--expeca-dir",
-        required=True,
-        help="Directory containing ExPeCA run folder(s) or ExPeCA delayDecom*.csv files.",
+        description="Create 5G-LENA delay decomposition CSVs from 5G-LENA log roots"
     )
     parser.add_argument(
         "--lena-dir",
         required=True,
         help="Directory containing 5G-LENA run folder(s) or log files.",
     )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory where 5G-LENA delay decomposition CSVs should be written.",
+    )
     args = parser.parse_args()
 
-    expeca_dir = Path(args.expeca_dir).resolve()
     lena_dir = Path(args.lena_dir).resolve()
-    plt.rcParams.update({"font.size": FONT_SIZE})
-    csv_runs = find_expeca_csv_runs(expeca_dir)
     lena_runs = find_run_dirs(lena_dir)
-    if not csv_runs:
-        print(f"WARN: no ExPeCA CSV runs found under {expeca_dir}")
-        return 0
     if not lena_runs:
         print(f"WARN: no 5G-LENA run directories found under {lena_dir}")
         return 0
 
-    expeca_by_run = index_paths_by_run_number(csv_runs, "ExPeCA CSV")
     lena_by_run = index_paths_by_run_number(lena_runs, "5G-LENA run")
-    common_runs = sorted(set(expeca_by_run).intersection(lena_by_run))
-
-    missing_expeca = sorted(set(lena_by_run).difference(expeca_by_run))
-    missing_lena = sorted(set(expeca_by_run).difference(lena_by_run))
-    if missing_expeca:
-        print(f"WARN: missing ExPeCA CSV for runs: {missing_expeca}")
-    if missing_lena:
-        print(f"WARN: missing 5G-LENA logs for runs: {missing_lena}")
-    if not common_runs:
-        print("WARN: no common run numbers found between ExPeCA and 5G-LENA inputs")
-        return 0
-
-    output_root = (
-        Path(__file__).resolve().parent
-        / "sim_campaign_logs"
-        / "compare_expeca_5Glena_logs"
-    )
-    csv_output_dir = (
-        Path(__file__).resolve().parents[1]
-        / "sim_campaign_logs"
-        / "benchmarking_traffic"
-        / "delay_decomposition_data"
-    )
-    print(f"Writing comparison plots under: {output_root}")
+    csv_output_dir = Path(args.output_dir).resolve()
     print(f"Writing 5G-LENA delay decomposition CSVs under: {csv_output_dir}")
-    for run_no in common_runs:
+    for run_no, lena_run_dir in sorted(lena_by_run.items()):
         if run_no == 13:
             print("WARN: skipping run13 by request")
             continue
-        plot_compare_pair(
-            run_no,
-            expeca_by_run[run_no],
-            lena_by_run[run_no],
-            output_root,
-            csv_output_dir,
-        )
+        write_lena_delay_decomposition_csv(run_no, lena_run_dir, csv_output_dir)
 
     return 0
 

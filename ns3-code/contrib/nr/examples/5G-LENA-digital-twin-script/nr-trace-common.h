@@ -306,29 +306,6 @@ UlRxTbComponentTraceCallback(Ptr<OutputStreamWrapper> stream,
 }
 
 inline void
-MacTbDelayTraceCallback(Ptr<OutputStreamWrapper> stream,
-                        std::string context,
-                        uint16_t cellId,
-                        uint16_t rnti,
-                        uint8_t bwpId,
-                        bool isDownlink,
-                        uint64_t delayNs,
-                        uint32_t ipId)
-{
-    if (!IsStreamReady(stream))
-    {
-        return;
-    }
-    (void)isDownlink;
-    (void)context;
-
-    const uint64_t delayUs = delayNs / 1000;
-    *stream->GetStream() << Simulator::Now().GetMicroSeconds() << "\t" << cellId << "\t"
-                         << static_cast<uint32_t>(bwpId) << "\t" << rnti << "\t" << ipId << "\t"
-                         << delayUs << std::endl;
-}
-
-inline void
 DlDataSinrTraceCallback(Ptr<OutputStreamWrapper> stream,
                         std::string context,
                         uint16_t cellId,

@@ -1,0 +1,53 @@
+5G-LENA delay components and their definitions
+
+
+UL end-end delay (per pkt)
+Log file: delay_trace.txt Field used: delay_us
+The packet is created at the Application layer at UE -> The packet is received at the Application layer at remote host after the gnb 
+
+RLC TX pre-HOL wait (per pkt)
+Log file: RlcTxQueueSojournTrace.txt Field used: pre_hol_wait_us 
+Time a packet is added to the RLC queue -> Time that packet becomes HOL. When multiple packets are sent in one grant, then the pre_hol_wait_us can be very small since they are HOL for a brief instant before they are packed into the grant. 
+
+Frame alignment delay (per pkt)
+Log file: tx timestamps from NrUlPdcpTxStats.txt for a pkt into RLC and tx timestamp of SR sent out from UePhyCtrlTxTrace.txt  
+Delay caused by the slotted nature of 5G where a packet may wait until the “right” slot boundary or UL opportunity (in TDD) depending on when it arrives relative to the frame/periodicity. It is measured as the delay between when a pkt is enqueued in the RLC queue -> when the next scheduling request (SR) is sent out at the PHY layer. An SR is only sent if a pkt arrives to an empty queue. So, this is not available for all pkts. This frame alignment delay included a 2 slot processing time and the wait time for an UL TDD slot. 5G-LENA does not implement SR periodicity.     
+
+Link delay (per pkt)
+When the packet or its first segment is dequeued from the RLC queue and handed to the MAC because a grant was received -> When the whole packet, i.e., the last segment is successfully received at the receiver RLC. 
+
+segmentation delay (per pkt)
+Segmentation delay = Link delay - UL HARQ (tx + retx) delay of the RLC segment that experienced the largest delay for this pkt 
+
+
+
+
+
+RLC HOL-to-grant wait (per RLC segment) (convert from per RLC segment to per pkt by taking it only for the first segment. )
+Log file: RlcHolGrantWaitTrace.txt Field used: hol_grant_wait_us
+Time when a packet becomes HOL -> until it is dequeued for TX after receiving UL DCI grant. This can result in segmentation in which case the rest of the pkt is added back into the RLC queue with the “waiting for grant timer” continuing to tick.   
+
+
+UL HARQ (tx + retx) delay (per RLC segment)(convert from per RLC segment to per pkt by taking it only for the longest segment, in time)
+Log file: NrUlRlcRxStats.txt Field used: delay_us (converted to ms) per RLC segment 
+Time that the MAC hands the delay to PHY for transmission -> receiving a harq ack after 0- 3 retx. 
+
+Receiver side RLC reordering delay (per RLC segment) (convert from per RLC segment to per pkt by taking the residual of the full ran delay - (link delay and queuing delay))
+Log file: NrUlPdcpRxStats.txt and NrUlRlcRxStats.txt 
+Time from final RLC segment arrival at receiver side RLC -> upstream PDCP delivery for that packet
+This is the additional delay at the receiver side incurred when RLC segments are dropped or received out of order.  
+
+Scheduling delay (per-pkt for empty queue pkts)
+Log file: 
+Time between when the UE sends a scheduling request, and when the UE sends its first RLC segment after receiving a grant (UL DCI). 
+
+
+Note: Each grant can provision a fraction of a packet or even multiple packets as a single transport block.  If there are multiple packets in a transport block, then we see one log entry per packet. If a packet is segmented, then we see one log per RLC segment that becomes a transport block.  
+Note: You cannot sum up the delay components of each RLC segment of a packet to get the end-end delay. This is because if a packet is segmented then the segment that is added back to the RL queue continues to increment it grant wait time. So, the grant wait time for the second segment included the grant wait time for the first segment. I could have separated this but I did not because in any case I cannot sum up the delays because the grant wait time of one segment overlaps with the harq tx/rx time of the previous segment, anyway, preventing us from being able to sum the delays.  
+
+
+end-end-delay (per pkt) = core delay + ran delay 
+ran delay (per segment) = queuing delay + link delay 
+link delay (per segment) = transmission delay + segmentation delay + retransmissions delay
+Queuing delay = (waiting in queue to be HOL delay) +(scheduling delay)
+Scheduling delay = frame alignment delay + the rest
