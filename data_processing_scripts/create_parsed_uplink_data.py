@@ -16,6 +16,7 @@ COMMON_CONTEXT: List[str] = [
     "msg_type",
     "time_us",
 ]
+GNB_BSR_CONTEXT: List[str] = COMMON_CONTEXT + ["lcg"]
 
 DRB_LCID_MIN = 3  # SRB0/1/2 are reserved; DRB/data LCIDs start at 3.
 
@@ -24,7 +25,7 @@ LOG_CONFIG: Dict[str, Dict[str, object]] = {
         "direction": "UL",
         "metrics": {"queue_bytes": "max", "bsr_level": "median"},
         "fill": {"queue_bytes": "ffill", "bsr_level": "ffill"},
-        "context": COMMON_CONTEXT,
+        "context": GNB_BSR_CONTEXT,
     },
     # "SrsSinrTrace.txt": {
     #     "direction": "UL",
@@ -126,7 +127,32 @@ LOG_CONFIG: Dict[str, Dict[str, object]] = {
     },
 }
 
-TIME_COLUMNS: List[str] = ["time_us"]
+OUTPUT_COLUMN_RENAMES: Dict[str, str] = {
+    "GnbBsrTrace_per_rnti_queue_bytes": "ue_buffer_bytes",
+    "GnbBsrTrace_per_rnti_bsr_level": "ue_bsr_level",
+    "GnbBsrTrace_overall_queue_bytes": "cell_buffer_bytes",
+    "NrUlMacStats_per_rnti_rv": "ue_mac_rv",
+    "NrUlMacStats_per_rnti_mcs": "ue_mac_mcs",
+    "NrUlMacStats_per_rnti_tb_size": "ue_scheduled_tb_bytes",
+    "NrUlMacStats_per_rnti_num_prbs": "ue_scheduled_prbs",
+    "NrUlMacStats_overall_tb_size": "cell_scheduled_tb_bytes",
+    "NrUlMacStats_overall_num_prbs": "cell_scheduled_prbs",
+    "NrUlPdcpRxStats_per_rnti_packet_size": "ue_pdcp_pdu_bytes",
+    "NrUlPdcpRxStats_overall_packet_size": "cell_pdcp_pdu_bytes",
+    "NrUlRlcRxStats_per_rnti_packet_size": "ul_rlc_pdu_bytes",
+    "NrUlRlcRxStats_overall_packet_size": "cell_rlc_pdu_bytes",
+    "UlRxTbTrace_per_rnti_sinr_db": "ue_sinr_db",
+    "UlRxTbTrace_per_rnti_cqi": "ue_cqi",
+    "UlRxTbTrace_per_rnti_tbler": "ue_tbler",
+    "delay_trace_per_rnti_pkt_size": "ul_probe_rx_bytes",
+    "delay_trace_per_rnti_delay_us": "ul_probe_delay_us",
+    "rtt_trace_per_rnti_pkt_size": "rtt_probe_rx_bytes",
+    "rtt_trace_per_rnti_delay_us": "rtt_delay_us",
+    "vrFragment_trace_per_rnti_burst_size": "ul_vr_fragment_burst_bytes",
+    "vrFragment_trace_per_rnti_delay_us": "ul_vr_fragment_delay_us",
+    "vrBurst_trace_per_rnti_burst_size": "ul_vr_burst_bytes",
+    "vrBurst_trace_per_rnti_num_frags": "ul_vr_burst_fragments",
+}
 
 def read_log(path: Path) -> pd.DataFrame:
     """Load a whitespace-delimited trace file into a DataFrame."""
@@ -177,9 +203,8 @@ def build_rnti_cell_map(raw_logs: Dict[str, pd.DataFrame]) -> Dict[object, objec
 
 def get_time_microseconds(df: pd.DataFrame) -> pd.Series:
     """Return a time series in microseconds based on available time columns."""
-    for col in TIME_COLUMNS:
-        if col in df.columns:
-            return pd.to_numeric(df[col], errors="coerce")
+    if "time_us" in df.columns:
+        return pd.to_numeric(df["time_us"], errors="coerce")
     raise KeyError("Expected a time column (time_us) not found in log")
 
 def apply_fill_rules(
@@ -304,7 +329,12 @@ def find_run_dirs(base_dir: Path, filenames: List[str]) -> List[Path]:
             runs.append(entry)
     return runs
 
-def parse_run(run_dir: Path, args: argparse.Namespace, filenames: List[str]) -> None:
+def parse_run(
+    run_dir: Path,
+    output_dir: Path,
+    args: argparse.Namespace,
+    filenames: List[str],
+) -> None:
     """Parse a single run directory and write the parsed CSV."""
     print(f"Processing run: {run_dir}")
     raw_logs = load_logs(run_dir, filenames)
@@ -318,7 +348,7 @@ def parse_run(run_dir: Path, args: argparse.Namespace, filenames: List[str]) -> 
         df = filter_direction(df, fname, args.direction, config["direction"])
         if fname == "GnbBsrTrace.txt" and "lcg" in df.columns:
             lcg_values = pd.to_numeric(df["lcg"], errors="coerce")
-            df = df[lcg_values != 0]
+            df = df[lcg_values > 0]
         msg_type = config.get("msg_type")
         if msg_type and "msg_type" in df.columns:
             df = df[df["msg_type"].astype(str).str.upper() == str(msg_type).upper()]
@@ -388,8 +418,9 @@ def parse_run(run_dir: Path, args: argparse.Namespace, filenames: List[str]) -> 
             rnti_idx = cols.index("rnti")
             cols.insert(rnti_idx + 1, "cell_id")
             combined_df = combined_df.loc[:, cols]
+        combined_df = combined_df.rename(columns=OUTPUT_COLUMN_RENAMES)
 
-    output_path = run_dir / f"parsed_data_from_{run_dir.name}.csv"
+    output_path = output_dir / f"parsed_data_from_{run_dir.name}.csv"
     combined_df.to_csv(output_path, index=False)
     print(f"Wrote parsed log: {output_path}")
 
@@ -402,6 +433,11 @@ def main() -> int:
         "--run-dir",
         default=".",
         help="Run directory containing log files (default: current directory).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory where parsed CSV files will be written.",
     )
     parser.add_argument(
         "--direction",
@@ -430,12 +466,14 @@ def main() -> int:
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
+    output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
     filenames = select_log_files(args.direction)
     run_dirs = find_run_dirs(run_dir, filenames)
     if not run_dirs:
         raise FileNotFoundError(f"No run directories found under {run_dir}")
     for rdir in run_dirs:
-        parse_run(rdir, args, filenames)
+        parse_run(rdir, output_dir, args, filenames)
 
     return 0
 

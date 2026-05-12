@@ -1,19 +1,23 @@
-# ns3 5G Digital Twin Release
+# ns-3 5G Digital Twin Release
 
-The objective of this codebase is to bring together various ns-3 components and create a 5G simulation scripts that can be used to study network and user performance under various scenarios as well as generate datasets from them for training machine learning models for KPI predictions.  
+The objective of this codebase is to bring together various ns-3 components and create 5G simulation scripts that can be used to study network and user performance under various scenarios, and to generate datasets for training machine learning models for KPI prediction.
 
 ## What’s in this folder
 
-This repository is a combined release tree built on top of ns-3 with local changes in core ns-3, `contrib/nr`, `contrib/vr-app`, and the custom built digital-twin 5G simulation scripts under `contrib/nr/examples/5G-LENA-digital-twin-script`. 
+This repository keeps the ns-3 source tree under `ns3-code/`, with dataset documentation and data-processing scripts kept outside the simulator tree.
+
+The `ns3-code/` directory is a combined release tree built on top of ns-3 with local changes in core ns-3, `contrib/nr`, `contrib/vr-app`, and the custom digital-twin 5G simulation scripts under `ns3-code/contrib/nr/examples/5G-LENA-digital-twin-script/`.
 This repo is intended for reproducibility and sharing of the full simulator setup.
 It is not a clean fork of upstream ns-3 or upstream NR.
 
 Main custom content includes:
 
-- modified ns-3 core files under `src/`
-- modified NR files under `contrib/nr/model/`
-- VR application code under `contrib/vr-app/`
-- Custom 5G simulation setup scripts under `contrib/nr/examples/5G-LENA-digital-twin-script/`
+- modified ns-3 core files under `ns3-code/src/`
+- modified NR files under `ns3-code/contrib/nr/model/`
+- VR application code under `ns3-code/contrib/vr-app/`
+- custom 5G simulation setup scripts under `ns3-code/contrib/nr/examples/5G-LENA-digital-twin-script/`
+- data-processing scripts under `data_processing_scripts/`
+- dataset and trace documentation under `dataset_documentation/`
 
 ## Upstream bases
 
@@ -24,21 +28,23 @@ This release was assembled from:
 - vr-app base commit: `1903d6f2bd2b96994da9d7e6479ed72d68f25bd3`
 
 If you need clean upstreamable changes later, extract them from this repo into separate forks.
-Some bugs in the main source code has been fixed. A few feature additions have also been made to improve the tracing and logging capability of the simulation. Bug reports and change reports for these is provided in `bug_and_change_reports_ns3_nr/`
+Some bugs in the main source code have been fixed. A few feature additions have also been made to improve the tracing and logging capability of the simulation. Bug reports and change reports for these are provided in `bug_and_change_reports_ns3_nr/`.
 
 ## Build
 
-For this repo, configure ns-3 with examples enabled and an optimized build profile:
+Build from inside the ns-3 source tree:
 
 ```bash
-./ns3 configure --build-profile optimized --enable-examples
+cd ns3-code
+./ns3 configure -d optimized --enable-examples
 ./ns3 build
 ```
 
 If you also want the ns-3 tests enabled, use:
 
 ```bash
-./ns3 configure --build-profile optimized --enable-examples --enable-tests
+cd ns3-code
+./ns3 configure -d optimized --enable-examples --enable-tests
 ./ns3 build
 ```
 
@@ -47,7 +53,7 @@ If you also want the ns-3 tests enabled, use:
 The custom scripts we have created to generate data live in:
 
 ```text
-contrib/nr/examples/5G-LENA-digital-twin-script/
+ns3-code/contrib/nr/examples/5G-LENA-digital-twin-script/
 ```
 
 Scripts `cellular-network-user.cc` and `delay-benchmarking-user.cc` create the two main dataset-generation scenarios. The experiment setup, dataset links, and data-format documentation are collected in [dataset_documentation/README.md](dataset_documentation/README.md).
@@ -58,14 +64,15 @@ These scripts help setup a simulation campaign with multiple simulations in para
 - `run-parallel-bursty-traffic-sims.py`
 - `run-parallel-benchmarking-sims.py`
 
-Run them from the repo root or from the script directory, depending on the script.
+Both runners can be launched from any working directory. They locate the ns-3 tree from their own file path and require `--output-dir`; generated logs are written to the directory you choose rather than to a hardcoded campaign folder.
 
 ### Data analysis, visualization and processing scripts 
-- `compare_delay_decomposition_distributions.py`: compares ExPeCA delay-decomposition CSVs against generated 5G-LENA delay-decomposition CSVs and writes histogram, CDF, and packet-index series plots.
-- `create_parsed_uplink_data.py`: aggregates raw ns-3 trace logs into aligned per-RNTI time-window CSVs for uplink feature/metric analysis.
-- `create_delay_decomposition_data.py`: creates per-packet 5G-LENA delay-decomposition CSVs from raw 5G-LENA trace logs.
-- `visualize_raw_data.py`: generates per-RNTI raw-trace histograms, CDFs, timeseries plots, and summary text for each run.
+These scripts live in `data_processing_scripts/`.
 
+- `compare_delay_decomposition_distributions.py`: compares ExPeCA delay-decomposition CSVs against generated 5G-LENA delay-decomposition CSVs and writes histogram, CDF, and packet-index series plots to `--output-dir`.
+- `create_parsed_uplink_data.py`: aggregates raw ns-3 trace logs into aligned per-RNTI time-window CSVs for uplink feature/metric analysis.
+- `create_delay_decomposition_data.py`: creates per-packet 5G-LENA delay-decomposition CSVs from raw 5G-LENA trace logs and writes them to `--output-dir`.
+- `visualize_raw_data.py`: generates per-RNTI raw-trace histograms, CDFs, timeseries plots, and summary text inside each run directory.
 
 ## Datasets and Documentation
 

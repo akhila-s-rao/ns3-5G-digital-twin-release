@@ -2,7 +2,6 @@
 import argparse
 import math
 from pathlib import Path
-import sys
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -37,11 +36,6 @@ def load_tsv(path: Path) -> pd.DataFrame | None:
         return None
     return pd.read_csv(path, sep=r"\s+")
 
-def filter_data_bearers(df: pd.DataFrame | None) -> pd.DataFrame | None:
-    if df is None or "lcid" not in df.columns:
-        return df
-    return df[df["lcid"] >= DRB_LCID_MIN]
-
 def filter_data_only(df: pd.DataFrame | None) -> pd.DataFrame | None:
     """Filter to data traffic when possible using msg_type or LCID."""
     if df is None:
@@ -50,6 +44,18 @@ def filter_data_only(df: pd.DataFrame | None) -> pd.DataFrame | None:
         df = df[df["msg_type"].astype(str).str.upper() == "DATA"]
     if "lcid" in df.columns:
         df = df[df["lcid"] >= DRB_LCID_MIN]
+    return df
+
+def filter_nonempty_data_bsrs(df_gnb_bsr: pd.DataFrame | None) -> pd.DataFrame | None:
+    if df_gnb_bsr is None or df_gnb_bsr.empty:
+        return df_gnb_bsr
+    df = df_gnb_bsr
+    if "lcg" in df.columns:
+        lcg_numeric = pd.to_numeric(df["lcg"], errors="coerce")
+        df = df[lcg_numeric != 0]
+    if "queue_bytes" in df.columns:
+        queue_bytes = pd.to_numeric(df["queue_bytes"], errors="coerce")
+        df = df[queue_bytes > 0]
     return df
 
 def format_annotation_value(value: float) -> str:
@@ -261,7 +267,7 @@ def find_run_dirs(base_dir: Path) -> list[Path]:
             runs.append(entry)
     return runs
 
-def plot_run(input_dir: Path, output_dir: Path) -> None:
+def plot_run(input_dir: Path, output_dir: Path, target_rnti: int) -> None:
     """Plot histograms for a single run directory."""
     if not has_required_logs(input_dir):
         print(f"WARN: skipping {input_dir}, no known log files found")
@@ -285,6 +291,7 @@ def plot_run(input_dir: Path, output_dir: Path) -> None:
     df_delay = filter_data_only(df_delay)
     df_vr_frag = filter_data_only(df_vr_frag)
     df_gnb_bsr = filter_data_only(df_gnb_bsr)
+    df_gnb_bsr = filter_nonempty_data_bsrs(df_gnb_bsr)
 
     if df_delay is not None:
         df_delay["direction"] = df_delay["direction"].astype(str).str.upper()
@@ -342,12 +349,6 @@ def plot_run(input_dir: Path, output_dir: Path) -> None:
 
     bsr_counts: dict[int, int] = {}
     if df_gnb_bsr is not None and not df_gnb_bsr.empty:
-        if "lcg" in df_gnb_bsr.columns:
-            lcg_numeric = pd.to_numeric(df_gnb_bsr["lcg"], errors="coerce")
-            df_gnb_bsr = df_gnb_bsr[lcg_numeric != 0]
-        if "queue_bytes" in df_gnb_bsr.columns:
-            queue_bytes = pd.to_numeric(df_gnb_bsr["queue_bytes"], errors="coerce")
-            df_gnb_bsr = df_gnb_bsr[queue_bytes > 0]
         required_cols = {"time_us", "rnti", "frame", "subframe", "slot", "bwp_id", "node_id"}
         if required_cols.issubset(df_gnb_bsr.columns):
             unique_bsrs = df_gnb_bsr.drop_duplicates(
@@ -359,7 +360,10 @@ def plot_run(input_dir: Path, output_dir: Path) -> None:
             unique_bsrs = df_gnb_bsr
         bsr_counts = unique_bsrs.groupby("rnti").size().to_dict()
 
-    for rnti in rntis:
+    if target_rnti not in rntis:
+        emit(f"WARN: requested rnti {target_rnti} not found in run logs")
+
+    for rnti in [target_rnti]:
         run_label = f"{input_dir.name} | RNTI {rnti}"
         tbler_mean = float("nan")
         if df_ul_tb is not None and "tbler" in df_ul_tb.columns:
@@ -371,31 +375,8 @@ def plot_run(input_dir: Path, output_dir: Path) -> None:
         # that can carry UL. That yields up to 8 UL-capable slots per 10 ms, so the UL PRB
         # budget is 106 * 8 = 848 PRBs per 10 ms, i.e., 84.8 PRBs/ms.
         ul_prb_fraction = ul_prbs_per_ms / 84.8 if not math.isnan(ul_prbs_per_ms) else float("nan")
-        def summarize(series: pd.Series, label: str) -> str:
-            series = series.dropna()
-            if series.empty:
-                return f"{label}=n/a"
-            return (
-                f"{label}=max:{series.max():.3f} p95:{series.quantile(0.95):.3f} n:{series.size}"
-            )
-
-        ul_probe_series = (
-            df_delay[(df_delay["direction"] == "UL") & (df_delay["rnti"] == rnti)]["delay_ms"]
-            if df_delay is not None else empty_series()
-        )
         rlc_pdus_per_ip = compute_rlc_pdus_per_ip(df_ul_rlc, rnti)
         rlc_pdus_per_ip_ts = compute_rlc_pdus_per_ip_ts(df_ul_rlc, rnti)
-        rlc_hol_series = (
-            df_hol[df_hol["rnti"] == rnti]["hol_ms"] if df_hol is not None else empty_series()
-        )
-        rlc_hol_wait_series = (
-            df_rlc_hol_wait[df_rlc_hol_wait["rnti"] == rnti]["hol_wait_ms"]
-            if df_rlc_hol_wait is not None else empty_series()
-        )
-        pdcp_series = (
-            df_ul_pdcp[df_ul_pdcp["rnti"] == rnti]["delay_ms"]
-            if df_ul_pdcp is not None else empty_series()
-        )
 
         app_pdus = (
             df_delay[(df_delay["direction"] == "UL") & (df_delay["rnti"] == rnti)].shape[0]
@@ -556,9 +537,21 @@ def main():
         default=".",
         help="Directory containing run folder(s) or log files (default: .)",
     )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory where visualization plots and analysis summaries should be written.",
+    )
+    parser.add_argument(
+        "--rnti",
+        required=True,
+        type=int,
+        help="RNTI to visualize.",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir).resolve()
+    output_root = Path(args.output_dir).resolve()
     plt.rcParams.update({"font.size": FONT_SIZE})
 
     run_dirs = find_run_dirs(input_dir)
@@ -566,7 +559,7 @@ def main():
         raise FileNotFoundError(f"No run directories found under {input_dir}")
 
     for run_dir in run_dirs:
-        plot_run(run_dir, run_dir)
+        plot_run(run_dir, output_root / run_dir.name, args.rnti)
 
     return 0
 

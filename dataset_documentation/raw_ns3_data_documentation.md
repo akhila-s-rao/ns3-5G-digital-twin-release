@@ -120,7 +120,8 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 - bsr_level: BSR level index reported by the UE MAC.
 - queue_bytes: Buffer size in bytes derived from bsr_level.
 
-**`columns_used`** = `[time_us, rnti, bsr_level, queue_bytes]`
+**Filter by lcg > 0**
+**`columns_used`** = `[time_us, rnti, lcg, bsr_level, queue_bytes]`
 
 #### `UePhyCtrlTxTrace.txt (recorded at UE PHY; UL control)`
 - time_us: Simulation time in microseconds when the UE PHY transmits a control message.

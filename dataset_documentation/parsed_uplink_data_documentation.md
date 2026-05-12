@@ -6,9 +6,11 @@ Rows are keyed by `time_us` window start and `rnti`; `cell_id` is mapped from ra
 
 Metrics are resampled into fixed windows of `--window-ms` milliseconds, default `100`, from 0 to `--sim-duration`.
 
-Per-RNTI features are prefixed as `<raw_log_stem>_per_rnti_<metric>`. Overall features are prefixed as `<raw_log_stem>_overall_<metric>` and are only created for `packet_size`, `num_prbs`, `tb_size`, and `queue_bytes` from non-application traces.
+Per-RNTI and cell-level features use descriptive output names. The tables below list the raw source log and raw metric for each output column. Cell-level features are only created for `packet_size`, `num_prbs`, `tb_size`, and `queue_bytes` from non-application traces.
 
 Missing logs are skipped, so a parsed CSV only contains columns for raw log files present in that run directory.
+
+Parsed CSVs are written to `--output-dir` as `parsed_data_from_<run-dir-name>.csv`.
 
 ## Index Columns (3 columns)
 
@@ -23,34 +25,34 @@ Missing logs are skipped, so a parsed CSV only contains columns for raw log file
 
 | Column name | Raw log | Raw metric | Unit | Window aggregation logic | Impute empty window with | Meaning |
 |---|---|---|---:|---|---|---|
-| `GnbBsrTrace_per_rnti_queue_bytes` | `GnbBsrTrace.txt` | `queue_bytes` | bytes | max per RNTI | ffill | UE buffer size reported by BSR. |
-| `GnbBsrTrace_per_rnti_bsr_level` | `GnbBsrTrace.txt` | `bsr_level` | index | median per RNTI | ffill | BSR level index reported by UE MAC. |
-| `NrUlMacStats_per_rnti_rv` | `NrUlMacStats.txt` | `rv` | index | max per RNTI | ffill | Redundancy version for DATA UL grants. |
-| `NrUlMacStats_per_rnti_mcs` | `NrUlMacStats.txt` | `mcs` | index | median per RNTI | ffill | MCS index for DATA UL allocations. |
-| `NrUlMacStats_per_rnti_tb_size` | `NrUlMacStats.txt` | `tb_size` | bytes | sum per RNTI | zero | UL transport block bytes scheduled for the RNTI. |
-| `NrUlMacStats_per_rnti_num_prbs` | `NrUlMacStats.txt` | `num_prbs` | PRBs | sum per RNTI | zero | UL PRBs allocated to the RNTI. |
-| `NrUlPdcpRxStats_per_rnti_packet_size` | `NrUlPdcpRxStats.txt` | `packet_size` | bytes | sum per RNTI | zero | UL PDCP PDU bytes received at gNB PDCP. |
-| `NrUlRlcRxStats_per_rnti_packet_size` | `NrUlRlcRxStats.txt` | `packet_size` | bytes | sum per RNTI | zero | UL RLC PDU bytes received at gNB RLC. |
-| `UlRxTbTrace_per_rnti_sinr_db` | `UlRxTbTrace.txt` | `sinr_db` | dB | median per RNTI | ffill | SINR for UL TB decoding at gNB PHY. |
-| `UlRxTbTrace_per_rnti_cqi` | `UlRxTbTrace.txt` | `cqi` | index | median per RNTI | ffill | CQI reported/used for the UL TB. |
-| `UlRxTbTrace_per_rnti_tbler` | `UlRxTbTrace.txt` | `tbler` | ratio | mean per RNTI | ffill | TB error-rate estimate for UL TB decoding. |
+| `ue_buffer_bytes` | `GnbBsrTrace.txt` | `queue_bytes` | bytes | max per RNTI | ffill | UE buffer size reported by BSR. |
+| `ue_bsr_level` | `GnbBsrTrace.txt` | `bsr_level` | index | median per RNTI | ffill | BSR level index reported by UE MAC. |
+| `ue_mac_rv` | `NrUlMacStats.txt` | `rv` | index | max per RNTI | ffill | Redundancy version for DATA UL grants. |
+| `ue_mac_mcs` | `NrUlMacStats.txt` | `mcs` | index | median per RNTI | ffill | MCS index for DATA UL allocations. |
+| `ue_scheduled_tb_bytes` | `NrUlMacStats.txt` | `tb_size` | bytes | sum per RNTI | zero | UL transport block bytes scheduled for the RNTI. |
+| `ue_scheduled_prbs` | `NrUlMacStats.txt` | `num_prbs` | PRBs | sum per RNTI | zero | UL PRBs allocated to the RNTI. |
+| `ue_pdcp_pdu_bytes` | `NrUlPdcpRxStats.txt` | `packet_size` | bytes | sum per RNTI | zero | UL PDCP PDU bytes received at gNB PDCP. |
+| `ul_rlc_pdu_bytes` | `NrUlRlcRxStats.txt` | `packet_size` | bytes | sum per RNTI | zero | UL RLC PDU bytes received at gNB RLC. |
+| `ue_sinr_db` | `UlRxTbTrace.txt` | `sinr_db` | dB | median per RNTI | ffill | SINR for UL TB decoding at gNB PHY. |
+| `ue_cqi` | `UlRxTbTrace.txt` | `cqi` | index | median per RNTI | ffill | CQI reported/used for the UL TB. |
+| `ue_tbler` | `UlRxTbTrace.txt` | `tbler` | ratio | mean per RNTI | ffill | TB error-rate estimate for UL TB decoding. |
 
 # Per-cell (5 columns)
 
-| `NrUlRlcRxStats_overall_packet_size` | `NrUlRlcRxStats.txt` | `packet_size` | bytes | sum over cell | zero | Total UL RLC PDU bytes received at gNB RLC. |
-| `NrUlPdcpRxStats_overall_packet_size` | `NrUlPdcpRxStats.txt` | `packet_size` | bytes | sum over cell | zero | Total UL PDCP PDU bytes received at gNB PDCP. |
-| `NrUlMacStats_overall_num_prbs` | `NrUlMacStats.txt` | `num_prbs` | PRBs | sum over cell | zero | Total UL PRBs allocated in the window. |
-| `NrUlMacStats_overall_tb_size` | `NrUlMacStats.txt` | `tb_size` | bytes | sum over cell | zero | Total UL transport block bytes scheduled in the window. |
-| `GnbBsrTrace_overall_queue_bytes` | `GnbBsrTrace.txt` | `queue_bytes` | bytes | max over cell | ffill | Overall max reported UL buffer size in the window. |
+| `cell_rlc_pdu_bytes` | `NrUlRlcRxStats.txt` | `packet_size` | bytes | sum over cell | zero | Total UL RLC PDU bytes received at gNB RLC. |
+| `cell_pdcp_pdu_bytes` | `NrUlPdcpRxStats.txt` | `packet_size` | bytes | sum over cell | zero | Total UL PDCP PDU bytes received at gNB PDCP. |
+| `cell_scheduled_prbs` | `NrUlMacStats.txt` | `num_prbs` | PRBs | sum over cell | zero | Total UL PRBs allocated in the window. |
+| `cell_scheduled_tb_bytes` | `NrUlMacStats.txt` | `tb_size` | bytes | sum over cell | zero | Total UL transport block bytes scheduled in the window. |
+| `cell_buffer_bytes` | `GnbBsrTrace.txt` | `queue_bytes` | bytes | max over cell | ffill | Overall max reported UL buffer size in the window. |
 
 ## Application performance Columns (6 columns)
 
-| `delay_trace_per_rnti_pkt_size` | `delay_trace.txt` | `pkt_size` | bytes | sum per RNTI | zero | UL app packet bytes received by UDP server. |
-| `delay_trace_per_rnti_delay_us` | `delay_trace.txt` | `delay_us` | us | max per RNTI | ffill | Max one-way UL app delay in the window. |
-| `vrFragment_trace_per_rnti_burst_size` | `vrFragment_trace.txt` | `burst_size` | bytes | sum per RNTI | zero | Sum of burst-size values on received VR fragments. |
-| `vrFragment_trace_per_rnti_delay_us` | `vrFragment_trace.txt` | `delay_us` | us | max per RNTI | ffill | Max one-way VR fragment delay in the window. |
-| `vrBurst_trace_per_rnti_burst_size` | `vrBurst_trace.txt` | `burst_size` | bytes | sum per RNTI | zero | Sum of received VR burst sizes. |
-| `vrBurst_trace_per_rnti_num_frags` | `vrBurst_trace.txt` | `num_frags` | count | sum per RNTI | zero | Sum of fragment counts reported for received VR bursts. |
+| `ul_probe_rx_bytes` | `delay_trace.txt` | `pkt_size` | bytes | sum per RNTI | zero | UL app packet bytes received by UDP server. |
+| `ul_probe_delay_us` | `delay_trace.txt` | `delay_us` | us | max per RNTI | ffill | Max one-way UL app delay in the window. |
+| `ul_vr_fragment_burst_bytes` | `vrFragment_trace.txt` | `burst_size` | bytes | sum per RNTI | zero | Sum of burst-size values on received VR fragments. |
+| `ul_vr_fragment_delay_us` | `vrFragment_trace.txt` | `delay_us` | us | max per RNTI | ffill | Max one-way VR fragment delay in the window. |
+| `ul_vr_burst_bytes` | `vrBurst_trace.txt` | `burst_size` | bytes | sum per RNTI | zero | Sum of received VR burst sizes. |
+| `ul_vr_burst_fragments` | `vrBurst_trace.txt` | `num_frags` | count | sum per RNTI | zero | Sum of fragment counts reported for received VR bursts. |
 
 
 ## Columns common between Expeca and 5G-SMARt testbeds

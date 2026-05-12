@@ -16,11 +16,12 @@ The delay decomposition CSV is built from:
 
 ## Output CSV Columns
 
-These csv files contain one row per UL PDCP data packet with a valid packet id. The base row is keyed by `(rnti, pkt_id)`.
+These csv files contain one row per UL PDCP data packet with a valid packet id. The base row is keyed by `(rnti, lcid, pkt_id)` so packets from different logical channels are kept separate.
 
 | Column | Unit | Metric | Source logs |
 |---|---:|---|---|
 | `rnti` | count | UE RNTI for the packet. | `NrUlPdcpRxStats.txt` |
+| `lcid` | count | Logical channel ID identifying the radio bearer for the packet. | `NrUlPdcpRxStats.txt` |
 | `pkt_id` | count | Packet id used to align packet records across trace layers. | Obtained from all the delay decomposition source logs. |
 | `pkt_size_bytes` | bytes | Packet size at receiver-side PDCP. | `NrUlPdcpRxStats.txt` |
 | `pdcp_rx_time_us` | us | Time when receiver-side PDCP receives the packet. | `NrUlPdcpRxStats.txt` |

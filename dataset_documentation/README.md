@@ -63,6 +63,8 @@ All runs inherit the common campaign defaults:
 | Dataset | Link | Contains | Related documentation |
 |---|---|---|---|
 | Bursty traffic logs | [Google Drive](https://drive.google.com/drive/folders/1ri-lEMtLknnHW55Hqn2xiYxC8jwfg4XA?usp=sharing) | `sample_run/` preview and `xr_logs.zip` containing the 10 bursty runs | [raw logs](raw_ns3_data_documentation.md), [parsed uplink data](parsed_uplink_data_documentation.md), [delay decomposition data](delay_decomposition_data_documentation.md) |
+| Bursty parsed uplink data | [Google Drive](https://drive.google.com/file/d/1ywy0lw2J83gtebYvxh301DaVeSisEuVd/view?usp=drive_link) | Parsed uplink CSVs for the 10 bursty runs | [parsed uplink data](parsed_uplink_data_documentation.md) |
+| Bursty delay decomposition data | [Google Drive](https://drive.google.com/file/d/1kYHCwe6iTCnm6t3SVf-BxS4xI-3cIo41/view?usp=drive_link) | Delay decomposition CSVs for the 10 bursty runs | [delay decomposition data](delay_decomposition_data_documentation.md) |
 
 ## Scenario 2: Benchmarking Traffic
 
@@ -95,6 +97,8 @@ All runs inherit the common benchmark defaults:
 | Dataset | Link | Contains | Related documentation |
 |---|---|---|---|
 | Delay benchmarking logs, background-load: none, UDP-load, TCP-load campaign | TODO: add Google Drive link | Raw logs, parsed uplink data, and delay decomposition outputs for `benchmark01`-`benchmark18` | [raw logs](raw_ns3_data_documentation.md), [parsed uplink data](parsed_uplink_data_documentation.md), [delay decomposition data](delay_decomposition_data_documentation.md) |
+| Benchmark parsed uplink data | [Google Drive](https://drive.google.com/file/d/1e6_v-kQ0MpCXEHgKEhAIVegrd8CeUR-W/view?usp=sharing) | Parsed uplink CSVs for the benchmarking runs | [parsed uplink data](parsed_uplink_data_documentation.md) |
+| Benchmark delay decomposition data | [Google Drive](https://drive.google.com/file/d/1l-WdW8NCmxutVLgUk2mCTcW3tKCiYWAd/view?usp=drive_link) | Delay decomposition CSVs for the benchmarking runs | [delay decomposition data](delay_decomposition_data_documentation.md) |
 
 ## Data Formats
 

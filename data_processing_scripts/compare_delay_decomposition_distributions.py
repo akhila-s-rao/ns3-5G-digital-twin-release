@@ -20,7 +20,9 @@ EXPECA_CSV_REQUIRED_COLUMNS = {
     "Retransmission delay",
     "Queuing delay",
     "Ran delay",
+    "Frame alignment delay",
     "segmentation delay",
+    "No of RLC attempts",
 }
 LENA_CSV_REQUIRED_COLUMNS = {
     "ran_delay_ms",
@@ -155,7 +157,7 @@ def find_lena_delay_decomposition_csv_runs(base_dir: Path) -> list[Path]:
 
 
 def extract_run_number(name: str) -> int | None:
-    m = re.search(r"(?i)(?:benchmark|delaydecom)[^0-9]*0*(\d+)", name)
+    m = re.search(r"0*(\d+)", name)
     if m:
         return int(m.group(1))
     return None
@@ -194,13 +196,19 @@ def load_expeca_csv_metrics(csv_path: Path) -> pd.DataFrame | None:
         "mcs": "mcs",
         "Max No of MAC attempts": "max_mac_attempts",
         "segmentation delay": "segmentation_delay_ms",
+        "segmentation_delay": "segmentation_delay_ms",
         "Retransmission delay": "retransmission_delay_ms",
+        "retransmission_delay": "retransmission_delay_ms",
         "Transmission delay": "transmission_delay_ms",
+        "transmission_delay": "transmission_delay_ms",
         "End to End Delay": "ul_end_to_end_delay_ms",
+        "e2e_delay": "ul_end_to_end_delay_ms",
         "Frame alignment delay": "frame_alignment_delay_ms",
         "Scheduling delay": "scheduling_delay_ms",
-        "Ran delay": "link_delay_ms",
+        "Ran delay": "ran_delay_ms",
+        "ran_delay": "ran_delay_ms",
         "Queuing delay": "queueing_delay_ms",
+        "queuing_delay": "queueing_delay_ms",
     }
     df = df.rename(columns=rename_map)
     for col in rename_map.values():
@@ -211,15 +219,18 @@ def load_expeca_csv_metrics(csv_path: Path) -> pd.DataFrame | None:
         df.get("transmission_delay_ms", pd.Series(dtype=float)).fillna(0.0)
         + df.get("retransmission_delay_ms", pd.Series(dtype=float)).fillna(0.0)
     )
-    df["delay_residual_ms"] = (
-        df["ul_end_to_end_delay_ms"] - (df["queueing_delay_ms"] + df["link_delay_ms"])
+    df["delay_residual_ms"] = df["ul_end_to_end_delay_ms"] - (
+        df["queueing_delay_ms"]
+        + df["transmission_delay_ms"]
+        + df["retransmission_delay_ms"]
+        + df["segmentation_delay_ms"]
     )
     return df
 
 
 def build_expeca_compare_metric_items(df: pd.DataFrame) -> list[tuple[pd.Series, str]]:
     items = [
-        (df["ul_end_to_end_delay_ms"], "UL end-to-end delay (ms)"),
+        (df["ul_end_to_end_delay_ms"], "Uplink end-to-end delay (ms)"),
         (df["queueing_delay_ms"], "Queueing delay (ms)"),
         (df["frame_alignment_delay_ms"], "Frame alignment delay (ms)"),
         (df["scheduling_delay_ms"], "Scheduling delay (ms)"),
@@ -247,6 +258,16 @@ def load_lena_delay_decomposition_csv_metrics(csv_path: Path) -> pd.DataFrame | 
     if missing:
         print(f"WARN: skipping {csv_path}, missing columns: {sorted(missing)}")
         return None
+    if "rnti" in df.columns:
+        df["rnti"] = pd.to_numeric(df["rnti"], errors="coerce")
+        rnti_counts = df["rnti"].dropna().value_counts()
+        if not rnti_counts.empty:
+            selected_rnti = rnti_counts.sort_values(kind="stable").index[0]
+            df = df[df["rnti"] == selected_rnti].copy()
+            print(
+                f"INFO: {csv_path.name}: keeping rnti={format_annotation_value(float(selected_rnti))} "
+                f"with {rnti_counts[selected_rnti]} rows"
+            )
     for col in LENA_CSV_REQUIRED_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
@@ -377,7 +398,7 @@ def main():
     print(f"Writing comparison plots under: {output_root}")
     for run_no in common_runs:
         if run_no == 13:
-            print("WARN: skipping run13 by request")
+            print("WARN: skipping run13")
             continue
         plot_compare_pair(
             run_no,
