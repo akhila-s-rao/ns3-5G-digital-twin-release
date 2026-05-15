@@ -115,14 +115,14 @@ LOG_CONFIG: Dict[str, Dict[str, object]] = {
     },
     "vrFragment_trace.txt": {
         "direction": "UL/DL",
-        "metrics": {"burst_size": "sum", "delay_us": "max"},
-        "fill": {"burst_size": "zero", "delay_us": "ffill"},
-        "context": COMMON_CONTEXT,
+        "metrics": {"fragment_bytes": "sum", "delay_us": "max"},
+        "fill": {"fragment_bytes": "zero", "delay_us": "ffill"},
+        "context": COMMON_CONTEXT + ["burst_size", "num_frags"],
     },
     "vrBurst_trace.txt": {
         "direction": "UL/DL",
-        "metrics": {"burst_size": "sum", "num_frags": "sum"},
-        "fill": {"burst_size": "zero", "num_frags": "zero"},
+        "metrics": {"burst_size": "sum"},
+        "fill": {"burst_size": "zero"},
         "context": COMMON_CONTEXT,
     },
 }
@@ -131,7 +131,7 @@ OUTPUT_COLUMN_RENAMES: Dict[str, str] = {
     "GnbBsrTrace_per_rnti_queue_bytes": "ue_buffer_bytes",
     "GnbBsrTrace_per_rnti_bsr_level": "ue_bsr_level",
     "GnbBsrTrace_overall_queue_bytes": "cell_buffer_bytes",
-    "NrUlMacStats_per_rnti_rv": "ue_mac_rv",
+    "NrUlMacStats_per_rnti_rv": "ue_mac_num_retx",
     "NrUlMacStats_per_rnti_mcs": "ue_mac_mcs",
     "NrUlMacStats_per_rnti_tb_size": "ue_scheduled_tb_bytes",
     "NrUlMacStats_per_rnti_num_prbs": "ue_scheduled_prbs",
@@ -139,7 +139,7 @@ OUTPUT_COLUMN_RENAMES: Dict[str, str] = {
     "NrUlMacStats_overall_num_prbs": "cell_scheduled_prbs",
     "NrUlPdcpRxStats_per_rnti_packet_size": "ue_pdcp_pdu_bytes",
     "NrUlPdcpRxStats_overall_packet_size": "cell_pdcp_pdu_bytes",
-    "NrUlRlcRxStats_per_rnti_packet_size": "ul_rlc_pdu_bytes",
+    "NrUlRlcRxStats_per_rnti_packet_size": "ue_rlc_pdu_bytes",
     "NrUlRlcRxStats_overall_packet_size": "cell_rlc_pdu_bytes",
     "UlRxTbTrace_per_rnti_sinr_db": "ue_sinr_db",
     "UlRxTbTrace_per_rnti_cqi": "ue_cqi",
@@ -148,10 +148,9 @@ OUTPUT_COLUMN_RENAMES: Dict[str, str] = {
     "delay_trace_per_rnti_delay_us": "ul_probe_delay_us",
     "rtt_trace_per_rnti_pkt_size": "rtt_probe_rx_bytes",
     "rtt_trace_per_rnti_delay_us": "rtt_delay_us",
-    "vrFragment_trace_per_rnti_burst_size": "ul_vr_fragment_burst_bytes",
+    "vrFragment_trace_per_rnti_fragment_bytes": "ul_vr_fragment_bytes",
     "vrFragment_trace_per_rnti_delay_us": "ul_vr_fragment_delay_us",
     "vrBurst_trace_per_rnti_burst_size": "ul_vr_burst_bytes",
-    "vrBurst_trace_per_rnti_num_frags": "ul_vr_burst_fragments",
 }
 
 def read_log(path: Path) -> pd.DataFrame:
@@ -346,6 +345,11 @@ def parse_run(
     for fname, df in raw_logs.items():
         config = LOG_CONFIG[fname]
         df = filter_direction(df, fname, args.direction, config["direction"])
+        if fname == "vrFragment_trace.txt" and {"burst_size", "num_frags"}.issubset(df.columns):
+            df["fragment_bytes"] = (
+                pd.to_numeric(df["burst_size"], errors="coerce")
+                / pd.to_numeric(df["num_frags"], errors="coerce")
+            )
         if fname == "GnbBsrTrace.txt" and "lcg" in df.columns:
             lcg_values = pd.to_numeric(df["lcg"], errors="coerce")
             df = df[lcg_values > 0]

@@ -78,7 +78,7 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 - tx_time_us: Fragment transmit timestamp in microseconds from SeqTsSizeFragHeader.
 - delay_us: One-way fragment delay in microseconds (now - tx_time_us).
 
-**`columns_used`** = `[time_us, rnti, burst_size, delay_us]`
+**`columns_used`** = `[time_us, rnti, burst_size, num_frags, delay_us]`
 
 #### `vrBurst_trace.txt (recorded at BurstSink (UE for DL, remote host for UL); UL or DL depends on sink placement)`
 - time_us: Receive time in microseconds at the BurstSink.
