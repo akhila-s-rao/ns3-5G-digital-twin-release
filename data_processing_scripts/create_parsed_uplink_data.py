@@ -23,7 +23,7 @@ DRB_LCID_MIN = 3  # SRB0/1/2 are reserved; DRB/data LCIDs start at 3.
 LOG_CONFIG: Dict[str, Dict[str, object]] = {
     "GnbBsrTrace.txt": {
         "direction": "UL",
-        "metrics": {"queue_bytes": "max", "bsr_level": "median"},
+        "metrics": {"queue_bytes": "max", "bsr_level": "max"},
         "fill": {"queue_bytes": "ffill", "bsr_level": "ffill"},
         "context": GNB_BSR_CONTEXT,
     },
@@ -104,19 +104,19 @@ LOG_CONFIG: Dict[str, Dict[str, object]] = {
     "delay_trace.txt": {
         "direction": "UL/DL",
         "metrics": {"pkt_size": "sum", "delay_us": "max"},
-        "fill": {"pkt_size": "zero", "delay_us": "ffill"},
+        "fill": {"pkt_size": "zero", "delay_us": "none"},
         "context": COMMON_CONTEXT,
     },
     "rtt_trace.txt": {
         "direction": "UL/DL",
         "metrics": {"pkt_size": "sum", "delay_us": "max"},
-        "fill": {"pkt_size": "zero", "delay_us": "ffill"},
+        "fill": {"pkt_size": "zero", "delay_us": "none"},
         "context": COMMON_CONTEXT,
     },
     "vrFragment_trace.txt": {
         "direction": "UL/DL",
         "metrics": {"fragment_bytes": "sum", "delay_us": "max"},
-        "fill": {"fragment_bytes": "zero", "delay_us": "ffill"},
+        "fill": {"fragment_bytes": "zero", "delay_us": "none"},
         "context": COMMON_CONTEXT + ["burst_size", "num_frags"],
     },
     "vrBurst_trace.txt": {
@@ -223,6 +223,8 @@ def apply_fill_rules(
             df[col] = df[col].fillna(0)
         elif rule == "ffill":
             df[col] = df[col].ffill()
+        elif rule == "none":
+            continue
         else:
             raise ValueError(f"Unknown fill rule '{rule}' for column '{col}'")
     return df

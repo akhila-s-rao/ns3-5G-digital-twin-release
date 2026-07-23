@@ -23,7 +23,7 @@ All columns in the CSV files are described below.
 | Column name | Unit | Window aggregation logic | Meaning | Impute empty window with |
 |---|---:|---|---|---|
 | `ue_buffer_bytes` | bytes | max | UE buffer size reported by BSR. | ffill |
-| `ue_bsr_level` | index | median | BSR level index reported by BSR. | ffill |
+| `ue_bsr_level` | index | max | BSR level index reported by BSR. | ffill |
 | `ue_mac_num_retx` | count | max | HARQ retransmission state observed for the UE. | ffill |
 | `ue_mac_mcs` | index | median | UL MCS index. | ffill |
 | `ue_scheduled_tb_bytes` | bytes | sum | Transport block bytes scheduled for the UE in UL grants. | zero |
@@ -47,7 +47,7 @@ All columns in the CSV files are described below.
 | Column name | Unit | Window aggregation logic | Meaning | Impute empty window with |
 |---|---:|---|---|---|
 | `ul_probe_rx_bytes` | bytes | sum per RNTI | UL delay probe packet bytes received by UDP server. | zero |
-| `ul_probe_delay_us` | us | max per RNTI | UL delay over delay probe packets. | ffill |
+| `ul_probe_delay_us` | us | max per RNTI | UL delay over delay probe packets. | none |
 | `ul_vr_fragment_bytes` | bytes | sum per RNTI | Estimated VR fragment bytes received by the VR server. | zero |
-| `ul_vr_fragment_delay_us` | us | max per RNTI | UL delay of VR fragments. | ffill |
+| `ul_vr_fragment_delay_us` | us | max per RNTI | UL delay of VR fragments. | none |
 | `ul_vr_burst_bytes` | bytes | sum per RNTI | Received VR burst sizes. | zero |
