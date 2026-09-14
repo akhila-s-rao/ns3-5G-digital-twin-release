@@ -373,7 +373,6 @@ NrRlcSm::BufferStatusReport()
     p.retxQueueSize = 0;
     p.retxQueueHolDelay = 0;
     p.statusPduSize = 0;
-    p.expBsrTimer = false;
     // codex added
     m_bufferStatus(p.rnti,
                    p.lcid,

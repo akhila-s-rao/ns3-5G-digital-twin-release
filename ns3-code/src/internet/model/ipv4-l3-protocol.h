@@ -462,7 +462,7 @@ class Ipv4L3Protocol : public Ipv4
     uint8_t m_defaultTtl;             //!< Default TTL
     std::map<std::pair<uint64_t, uint8_t>, uint16_t>
         m_identification; //!< Identification (for each {src, dst, proto} tuple)
-    uint32_t m_traceIdentification{0}; //!< Tracing pkt_id counter (per Ipv4L3Protocol / node)
+    uint32_t m_traceIdentification{1}; //!< Tracing pkt_id counter; zero means unavailable
     Ptr<Node> m_node;     //!< Node attached to stack.
 
     /// Trace of sent packets

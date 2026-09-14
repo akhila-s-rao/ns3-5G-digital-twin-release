@@ -31,6 +31,48 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 #### `sim_info.txt (recorded by controller script (not UE/gNB); N/A UL/DL)`
 - parameter: Parameter name for the run configuration snapshot.
 - value: Parameter value recorded for that name.
+- max_ul_mcs: Maximum MCS index allowed for UL grants. Both simulation scenarios record this
+  setting. The SR bootstrap-grant cap is recorded separately as enable_bootstrap_mcs_limit.
+- tdd_pattern: Configured 5G-LENA slot pattern. The ExPeCA profile uses `DL|DL|DL|F|UL`
+  repetitions because 5G-LENA's `F` type, unlike its `S` type, supports both DL and UL data.
+- f_slot_dl_allocation_symbols: Maximum symbols available for DL allocation in each `F` slot.
+  The ExPeCA profile uses five, corresponding to symbol indices 1 through 5 after DL control.
+- f_slot_ul_allocation_symbols: Maximum symbols available for UL allocation in each `F` slot.
+  The ExPeCA profile uses three, corresponding to symbol indices 10 through 12 before UL control.
+- srs_in_f_slots, srs_in_ul_slots: Whether the scheduler can place SRS in flexible and full UL
+  slots. The ExPeCA profile disables SRS in `F` slots and retains it in full `UL` slots.
+- srs_periodicity_ul_opportunities: SRS periodicity measured by 5G-LENA's eligible-UL-opportunity
+  counter. The ExPeCA profile uses 16 full-UL opportunities, equivalent to 80 absolute slots for
+  the repeated five-slot pattern.
+- ue_antenna_rows, ue_antenna_columns: UE antenna-array dimensions.
+- gnb_antenna_rows, gnb_antenna_columns: gNB antenna-array dimensions.
+- po_nominal_pusch_dbm: Configured `PoNominalPusch` power-control target in dBm.
+- ul_power_control_alpha: Fractional path-loss compensation factor.
+- ue_pcmin_dbm, ue_pcmax_dbm: UE transmit-power limits in dBm.
+- ul_power_control_technical_spec: Power-control formula selection (`TS38.213` or `TS36.213`).
+- gnb_noise_figure_db: Configured gNB receiver noise figure in dB.
+- ue_noise_figure_db: Configured UE receiver noise figure in dB.
+- shadowing_enabled: Whether log-normal channel shadowing is enabled (1) or disabled (0).
+- n2_delay_slots: Configured minimum UL DCI-to-PUSCH offset in slots. The Expeca profile
+  defaults to 6 slots (3 ms at numerology 1), matching OAI's normal PUSCH TDA K2; the
+  5G-SMART profile retains the original 5G-LENA value of 2 slots. The TDD pattern can increase
+  the effective K2 when the nominal DCI slot is not DL-control capable.
+- ue_l1_l2_ctrl_latency_slots: UE L1-to-L2 control-message latency. The digital-twin profile
+  sets this to zero so an SR is not delayed after its selected MAC opportunity.
+- gnb_l1_l2_ctrl_latency_slots: gNB L1-to-L2 control-message latency. The digital-twin profile
+  retains the 5G-LENA default of 2 slots.
+- gnb_tb_decode_latency_us: Fixed gNB transport-block decoding latency in microseconds. The
+  digital-twin profile uses 600 us for uplink reception; the 5G-LENA default is 100 us.
+- ul_scheduler_lookahead_slots: Number of slots between the gNB UL scheduling decision and UL DCI
+  transmission. The Expeca profile uses 6 slots (3 ms at numerology 1) to model the UL effect of
+  OAI `sl_ahead`; the core and 5G-SMART default is 2 slots. This does not alter DL/RAR scheduling,
+  K2, or UE control-message latency. The simulation scenarios activate the Expeca value at
+  `appStartTime`, after initial access and before generated application traffic begins, because
+  5G-LENA routes random-access processing through its UL slot-indication pipeline.
+- sr_periodicity_slots: Period of each UE MAC's SR opportunity grid in slots. Zero disables
+  periodic gating and preserves the original next-slot SR behavior.
+- sr_offset_slots: MAC enqueue-slot offset within the SR period. PHY control-message latency and
+  the next valid TDD UL-control allocation determine the final transmitted SR slot.
 
 **`columns_used`** = `[]`
 
@@ -136,7 +178,45 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 - slot: Slot number from the UE SFN/slot.
 - msg_type: UE PHY control-message type, such as scheduling request.
 
+For SR rows, `time_us` is emitted when the final UL-control allocation starts. The frame,
+subframe, and slot fields can be used to derive the earlier slot-start/MAC-opportunity time.
+
+For `msg_type = SR`, the row can represent either:
+- an initial SR requested when data enters an idle UE buffer; or
+- a recovery SR requested when `NrUeMac::RetxBsrTimer` expires while the UE remains active
+  with buffered data.
+
+The trace does not include an SR-subtype column, so these cases cannot be distinguished from
+this file alone. `UeMacSrTriggerTrace.txt` records the corresponding MAC trigger and subtype.
+An SR also does not imply that the gNB's current UL buffer estimate is zero:
+the scheduler preserves a positive estimate for recovery SRs and applies the 12-byte bootstrap
+estimate, and any configured bootstrap MCS cap, only when its existing estimate is zero.
+
 **`columns_used`** = `[time_us, rnti, msg_type]`
+
+#### `UeMacSrTriggerTrace.txt (recorded at UE MAC; UL scheduling-request trigger)`
+- time_us: Simulation time in microseconds when UE MAC transitions to `TO_SEND` to request an SR.
+- node_id: UE node ID.
+- ue_id: UE index derived from the node ID.
+- imsi: IMSI for the UE.
+- cell_id: Serving cell ID for the UE.
+- rnti: UE RNTI.
+- bwp_id: BWP ID used by UE MAC.
+- frame: Frame number at the trigger.
+- subframe: Subframe number at the trigger.
+- slot: Slot number at the trigger.
+- sr_type: `INITIAL` when new buffered data activates an idle UE, or `RECOVERY` when
+  `NrUeMac::RetxBsrTimer` expires while data remains buffered.
+- trigger: UE-MAC function that requested the SR. Current values are
+  `DoTransmitBufferStatusReport` for `INITIAL` and `ExpireRetxBsrTimer` for `RECOVERY`.
+
+Each row is paired with the next PHY-transmitted SR for the same RNTI. The trigger normally
+precedes PHY transmission while the UE waits for its configured periodic SR opportunity, PHY
+control-message latency, and an eligible TDD UL-control allocation. Period and offset state are
+held independently by each UE MAC. This trace contains only transitions that request an SR;
+routine UE-MAC state transitions are not written.
+
+**`columns_used`** = `[time_us, rnti, sr_type]`
 
 #### `SrsSinrTrace.txt (recorded at gNB PHY; UL)`
 - time_us: Simulation time in microseconds when the gNB PHY reports the SRS SINR.
@@ -145,6 +225,18 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 - sinr_db: SRS SINR in dB computed at the gNB.
 
 **`columns_used`** = `[time_us, rnti, sinr_db]`
+
+#### `UePuschTxPowerTrace.txt (recorded at UE power control; UL)`
+- time_us: Simulation time in microseconds when PUSCH transmit power is calculated.
+- cell_id: Serving cell ID used by the UE PHY.
+- rnti: UE RNTI.
+- pusch_tx_power_dbm: Total PUSCH transmit power in dBm after applying the configured
+  power-control formula and UE power limits.
+
+One row is written for each PUSCH transmission whose power is calculated while uplink power
+control is enabled.
+
+**`columns_used`** = `[]`
 
 #### `NrUlMacStats.txt (recorded at gNB MAC; UL)`
 - time_us: Simulation time in microseconds when the gNB PHY logs the UL DCI (grant TX).
@@ -167,8 +259,20 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 - num_prbs: Number of PRBs allocated (from RBG mask and RB-per-RBG).
 - msg_type: DCI type (DATA/CTRL/MSG3/SRS) for the UL grant.
 
+An SR preceding a DATA grant does not by itself make that grant a bootstrap grant. Bootstrap
+seeding and bootstrap MCS limiting apply only when the scheduler had a zero UL buffer estimate
+for the UE when processing the SR. A recovery SR with a positive estimate preserves that
+estimate and does not invoke the bootstrap MCS cap. The shared ExPeCA-style radio profile uses
+one PRB per RBG for normal grant sizing. A zero-estimate SR bootstrap grant uses exactly five
+PRBs and an MCS no greater than 9, matching the OAI bootstrap allocation.
+
 **Filter by msg_type = DATA**
 **`columns_used`** = `[time_us, rnti, msg_type, rv, mcs, tb_size, num_prbs]`
+
+For cross-layer packet correlation, IPv4 assigns a 32-bit tracing `pkt_id` from a per-node
+counter. Identifiable packets start at `pkt_id = 1`; zero is reserved to mean that no
+`Ipv4IdTag` was available for the logged bytes. Delay decomposition excludes `pkt_id = 0`
+records because multiple unidentified components cannot be correlated as one packet.
 
 #### `NrUlPdcpRxStats.txt (recorded at gNB PDCP; UL)`
 - time_us: Simulation time in microseconds when PDCP receives a UL PDU from RLC.
@@ -413,6 +517,9 @@ component_bytes = rlc_pdu_bytes.
 ## Uplink and Downlink transport block traces
 
 #### `DlRxTbTrace.txt (recorded at UE PHY; DL)`
+Exactly one row is emitted per received DL transport-block attempt, regardless of how many
+packet/PDU objects the TB contains.
+
 - time_us: Simulation time in microseconds when the TB is decoded.
 - frame: Frame number for the TB reception.
 - subframe: Subframe number for the TB reception.
@@ -434,6 +541,9 @@ component_bytes = rlc_pdu_bytes.
 **`columns_used`** = `[time_us, rnti, sinr_db, cqi, tbler]`
 
 #### `UlRxTbTrace.txt (recorded at gNB PHY; UL)`
+Exactly one row is emitted per received UL transport-block attempt, regardless of how many
+packet/PDU objects the TB contains.
+
 - time_us: Simulation time in microseconds when the TB is decoded.
 - frame: Frame number for the TB reception.
 - subframe: Subframe number for the TB reception.
@@ -455,6 +565,9 @@ component_bytes = rlc_pdu_bytes.
 **`columns_used`** = `[time_us, rnti, sinr_db, cqi, tbler]`
 
 #### `DlRxTbComponentTrace.txt (recorded at UE PHY; DL)`
+This trace remains intentionally component-level: a TB can produce multiple rows for distinct
+received PDU objects and pkt_id byte-tag components.
+
 - time_us: Simulation time in microseconds when the TB component row is logged.
 - rx_pdu_id: Monotonic ID for the received PHY packet/PDU attempt (group key for component rows).
 - frame, subframe, slot, sym_start, num_symbols: PHY timing/location of the received TB.

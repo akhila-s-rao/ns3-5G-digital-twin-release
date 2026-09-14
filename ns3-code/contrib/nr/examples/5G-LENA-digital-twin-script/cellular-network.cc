@@ -125,6 +125,7 @@ void CellularNetwork(const Parameters& params)
     ueMacCtrlTxStream = nullptr;
     ueMacStateStream = nullptr;
     ueMacRaTimeoutStream = nullptr;
+    uePuschTxPowerStream = nullptr;
 
     // Buffer defaults for RLC and sockets (bytes).
     Config::SetDefault ("ns3::NrRlcUm::MaxTxBufferSize", UintegerValue (params.rlcTxBuffSize)); 
@@ -133,6 +134,14 @@ void CellularNetwork(const Parameters& params)
     Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (params.tcpUdpBuffSize));
     Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (params.tcpUdpBuffSize));
     Config::SetDefault ("ns3::UdpSocket::RcvBufSize", UintegerValue (params.tcpUdpBuffSize));
+    Config::SetDefault("ns3::NrUePowerControl::PoNominalPusch",
+                       IntegerValue(params.poNominalPusch));
+    Config::SetDefault("ns3::NrUePowerControl::Alpha",
+                       DoubleValue(params.ulPowerControlAlpha));
+    Config::SetDefault("ns3::NrUePowerControl::Pcmin", DoubleValue(params.uePcminDbm));
+    Config::SetDefault("ns3::NrUePowerControl::Pcmax", DoubleValue(params.uePcmaxDbm));
+    Config::SetDefault("ns3::NrUePowerControl::TSpec",
+                       EnumValue(params.ulPowerControlTechnicalSpec));
     
     
     // Create user trace files and write column headers.
@@ -254,10 +263,33 @@ void CellularNetwork(const Parameters& params)
                                          EnumValue(RealisticBfManager::SRS_COUNT));
     nrHelper->SetUePhyAttribute("EnableUplinkPowerControl",
                                 BooleanValue(params.enableUlPc));
+    nrHelper->SetUePhyAttribute("NoiseFigure", DoubleValue(params.ueNoiseFigureDb));
+    nrHelper->SetGnbPhyAttribute("NoiseFigure", DoubleValue(params.gnbNoiseFigureDb));
+    nrHelper->SetUePhyAttribute("L1L2CtrlLatency",
+                                UintegerValue(params.ueL1L2CtrlLatencySlots));
+    nrHelper->SetGnbPhyAttribute("L1L2CtrlLatency",
+                                 UintegerValue(params.gnbL1L2CtrlLatencySlots));
+    nrHelper->SetGnbPhyAttribute("TbDecodeLatency",
+                                 TimeValue(MicroSeconds(params.gnbTbDecodeLatencyUs)));
+    nrHelper->SetGnbPhyAttribute("N2Delay", UintegerValue(params.n2DelaySlots));
     nrHelper->SetSchedulerTypeId(NrMacSchedulerOfdmaPF::GetTypeId());
+    nrHelper->SetSchedulerAttribute("MaxUlMcs", IntegerValue(params.maxUlMcs));
     nrHelper->SetSchedulerAttribute("EnableBootstrapMcsLimit",
                                     BooleanValue(params.enableBootstrapMcsLimit));
+    nrHelper->SetSchedulerAttribute("FSlotDlAllocationSymbols",
+                                    UintegerValue(params.fSlotDlAllocationSymbols));
+    nrHelper->SetSchedulerAttribute("FSlotUlAllocationSymbols",
+                                    UintegerValue(params.fSlotUlAllocationSymbols));
+    nrHelper->SetSchedulerAttribute("EnableSrsInFSlots",
+                                    BooleanValue(params.enableSrsInFSlots));
+    nrHelper->SetSchedulerAttribute("EnableSrsInUlSlots",
+                                    BooleanValue(params.enableSrsInUlSlots));
+    Config::SetDefault("ns3::NrMacSchedulerSrsDefault::StartingPeriodicity",
+                       UintegerValue(params.srsPeriodicityUlOpportunities));
     nrHelper->SetGnbMacAttribute("NumRbPerRbg", UintegerValue(params.numRbPerRbg));
+    nrHelper->SetUeMacAttribute("SrPeriodicitySlots",
+                                UintegerValue(params.srPeriodicitySlots));
+    nrHelper->SetUeMacAttribute("SrOffsetSlots", UintegerValue(params.srOffsetSlots));
     nrHelper->SetEpcHelper(nrEpcHelper);
     nrHelper->SetUlErrorModel("ns3::NrEesmCcT2");
     nrHelper->SetDlErrorModel("ns3::NrEesmCcT2");
@@ -296,7 +328,8 @@ void CellularNetwork(const Parameters& params)
         "UpdatePeriod",
         TimeValue(params.channelConditionUpdatePeriod));
     // Disable log-normal shadowing to reduce channel harshness in this setup.
-    channelHelper->SetPathlossAttribute("ShadowingEnabled", BooleanValue(false));
+    channelHelper->SetPathlossAttribute("ShadowingEnabled",
+                                        BooleanValue(params.shadowingEnabled));
     channelHelper->AssignChannelsToBands({band});
     allBwps = CcBwpCreator::GetAllBwps({band});
 
@@ -328,14 +361,14 @@ void CellularNetwork(const Parameters& params)
     nrEpcHelper->SetAttribute("S1uLinkDelay", TimeValue(MilliSeconds(0)));
 
     // Antennas for all the UEs
-    nrHelper->SetUeAntennaAttribute("NumRows", UintegerValue(2));
-    nrHelper->SetUeAntennaAttribute("NumColumns", UintegerValue(4));
+    nrHelper->SetUeAntennaAttribute("NumRows", UintegerValue(params.ueAntennaRows));
+    nrHelper->SetUeAntennaAttribute("NumColumns", UintegerValue(params.ueAntennaColumns));
     nrHelper->SetUeAntennaAttribute("AntennaElement",
                                     PointerValue(CreateObject<IsotropicAntennaModel>()));
 
     // Antennas for all the gNbs
-    nrHelper->SetGnbAntennaAttribute("NumRows", UintegerValue(4));
-    nrHelper->SetGnbAntennaAttribute("NumColumns", UintegerValue(8));
+    nrHelper->SetGnbAntennaAttribute("NumRows", UintegerValue(params.gnbAntennaRows));
+    nrHelper->SetGnbAntennaAttribute("NumColumns", UintegerValue(params.gnbAntennaColumns));
     nrHelper->SetGnbAntennaAttribute("AntennaElement",
                                      PointerValue(CreateObject<IsotropicAntennaModel>()));
 
@@ -437,6 +470,11 @@ void CellularNetwork(const Parameters& params)
     *****************************************************/      
     
     nrHelper->AttachToClosestGnb(ueNetDevs, gnbNetDev);
+    Ptr<NrGnbPhy> gnbPhy = nrHelper->GetGnbPhy(gnbNetDev.Get(0), 0);
+    Simulator::Schedule(params.appStartTime,
+                        [gnbPhy, slots = params.ulSchedulerLookaheadSlots]() {
+                            gnbPhy->SetUlSchedulerLookaheadSlots(slots);
+                        });
 
     /***********************************************
     * Traffic generation applications
@@ -629,7 +667,7 @@ void CellularNetwork(const Parameters& params)
     // WARNING: If EnableDlDataPhyTraces/EnableDlCtrlPhyTraces/EnableUlPhyTraces,
     // EnablePdcpSimpleTraces, or EnableRlcSimpleTraces is enabled, internal logging
     // will take over.
-    SetupNrTraces(gnbNetDev, nrHelper);
+    SetupNrTraces(gnbNetDev, ueNetDevs, nrHelper);
 
     // enable packet tracing from the application layer 
     // appId is being used here BE CAREFUL about changing the order 

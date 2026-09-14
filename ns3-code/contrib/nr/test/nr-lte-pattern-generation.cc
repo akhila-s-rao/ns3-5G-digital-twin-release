@@ -4,6 +4,7 @@
 
 #include "ns3/nr-gnb-phy.h"
 #include "ns3/test.h"
+#include "ns3/uinteger.h"
 
 /**
  * @file nr-lte-pattern-generation.cc
@@ -1384,6 +1385,34 @@ NrPatternTestCase::DoRun()
     };
 
     TestPattern(thirtheen, m);
+
+    Ptr<NrGnbPhy> phy = CreateObject<NrGnbPhy>();
+    phy->SetAttribute("UlSchedulerLookaheadSlots", UintegerValue(6));
+    NS_TEST_ASSERT_MSG_EQ(phy->GetUlSchedulerLookaheadSlots(),
+                          6,
+                          "UlSchedulerLookaheadSlots attribute was not applied");
+
+    const std::vector<LteNrTddSlotType> expecaPattern = {
+        LteNrTddSlotType::DL,
+        LteNrTddSlotType::DL,
+        LteNrTddSlotType::DL,
+        LteNrTddSlotType::F,
+        LteNrTddSlotType::UL,
+    };
+    Result expecaResult;
+    NrGnbPhy::GenerateStructuresFromPattern(expecaPattern,
+                                            &expecaResult.m_toSendDl,
+                                            &expecaResult.m_toSendUl,
+                                            &expecaResult.m_generateDl,
+                                            &expecaResult.m_generateUl,
+                                            &expecaResult.m_dlHarqFb,
+                                            0,
+                                            6,
+                                            2,
+                                            2,
+                                            6);
+    CheckMap(expecaResult.m_toSendUl, {{2, {6}}, {3, {6}}});
+    CheckMap(expecaResult.m_generateUl, {{1, {12}}, {2, {12}}});
 }
 
 void
@@ -1469,6 +1498,7 @@ NrPatternTestCase::TestPattern(const std::vector<LteNrTddSlotType>& pattern, con
                                             0,
                                             2,
                                             4,
+                                            2,
                                             2);
 
     if (m_verbose)

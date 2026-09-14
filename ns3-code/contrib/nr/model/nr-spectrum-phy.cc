@@ -21,6 +21,7 @@
 #include "ns3/trace-source-accessor.h"
 
 #include <numeric>
+#include <set>
 
 namespace ns3
 {
@@ -1750,6 +1751,7 @@ NrSpectrumPhy::ProcessReceivedPacketBurst()
     Ptr<NrGnbNetDevice> gnbRx = DynamicCast<NrGnbNetDevice>(GetDevice());
     Ptr<NrUeNetDevice> ueRx = DynamicCast<NrUeNetDevice>(GetDevice());
     std::map<uint16_t, DlHarqInfo> harqDlInfoMap;
+    std::set<uint16_t> tracedTbRntis;
     for (auto packetBurst : m_rxPacketBurstList)
     {
         for (auto packet : packetBurst->GetPackets())
@@ -1776,6 +1778,7 @@ NrSpectrumPhy::ProcessReceivedPacketBurst()
                 continue;
             }
             auto& tbInfo = itTb->second;
+            const bool firstPacketForTb = tracedTbRntis.insert(rnti).second;
 
             if (!tbInfo.m_isCorrupted)
             {
@@ -1808,7 +1811,10 @@ NrSpectrumPhy::ProcessReceivedPacketBurst()
                                                 gnbRx->GetCellId(),
                                                 GetBwpId(),
                                                 255);
-                m_rxPacketTraceGnb(traceParams);
+                if (firstPacketForTb)
+                {
+                    m_rxPacketTraceGnb(traceParams);
+                }
                 bool emittedComponent = false;
                 for (ByteTagIterator it = packet->GetByteTagIterator(); it.HasNext();)
                 {
@@ -1846,7 +1852,10 @@ NrSpectrumPhy::ProcessReceivedPacketBurst()
                                                 ueRx->GetTargetGnb()->GetCellId(),
                                                 GetBwpId(),
                                                 cqi);
-                m_rxPacketTraceUe(traceParams);
+                if (firstPacketForTb)
+                {
+                    m_rxPacketTraceUe(traceParams);
+                }
                 bool emittedComponent = false;
                 for (ByteTagIterator it = packet->GetByteTagIterator(); it.HasNext();)
                 {
@@ -1874,7 +1883,7 @@ NrSpectrumPhy::ProcessReceivedPacketBurst()
                         traceParams, lcid, rxPduId, rxPduBytes, 0, rxPduBytes);
                 }
 
-                if (m_enableDlDataPathlossTrace)
+                if (firstPacketForTb && m_enableDlDataPathlossTrace)
                 {
                     m_dlDataPathlossTrace(GetCellId(),
                                           GetBwpId(),

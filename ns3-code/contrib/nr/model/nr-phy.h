@@ -309,11 +309,13 @@ class NrPhy : public Object
     uint32_t GetSubcarrierSpacing() const;
 
     /**
-     * @return the latency (in n. of slots) between L1 and L2 layers. Default to 2.
-     *
-     * Before it was an attribute; as we are unsure if it works for values different
-     * from 2, we decided to make it static until the need to have it different
-     * from 2 arises.
+     * @brief Set the latency between L1 and L2 layers in slots.
+     * @param latency latency in slots
+     */
+    void SetL1L2CtrlLatency(uint32_t latency);
+
+    /**
+     * @return the latency in slots between L1 and L2 layers.
      */
     uint32_t GetL1L2CtrlLatency() const;
 
@@ -577,6 +579,7 @@ class NrPhy : public Object
     std::vector<std::list<Ptr<NrControlMessage>>> m_controlMessageQueue; //!< CTRL message queue
 
     Time m_tbDecodeLatencyUs{MicroSeconds(100)}; //!< transport block decode latency
+    uint32_t m_l1L2CtrlLatency{2};               //!< L1-to-L2 control latency in slots
     double m_centralFrequency{-1.0};             //!< Channel central frequency -- set by the helper
     uint16_t m_channelBandwidth{
         0}; //!< Value in kHz * 100. Set by RRC.

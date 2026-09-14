@@ -505,6 +505,7 @@ set(test_sources
     test/nr-test-sfnsf.cc
     test/nr-test-subband.cc
     test/nr-test-timings.cc
+    test/nr-test-ue-mac-retx-bsr.cc
     test/nr-uplink-power-control-test.cc
     test/nr-system-scheduler-test-qos.cc
     test/system-scheduler-test.cc

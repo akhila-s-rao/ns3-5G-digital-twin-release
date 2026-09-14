@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 
 import pandas as pd
+
+from expeca_data_cleaning import clean_expeca_data
 import os
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 import matplotlib.pyplot as plt
@@ -188,6 +190,8 @@ def load_expeca_csv_metrics(csv_path: Path) -> pd.DataFrame | None:
         print(f"WARN: skipping {csv_path}, missing columns: {sorted(missing)}")
         return None
 
+    df = clean_expeca_data(df)
+
     rename_map = {
         "Packet SN": "packet_sn",
         "Packet ID": "packet_id",
@@ -214,6 +218,13 @@ def load_expeca_csv_metrics(csv_path: Path) -> pd.DataFrame | None:
     for col in rename_map.values():
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+    valid_ran = df["ran_delay_ms"].notna() & np.isfinite(df["ran_delay_ms"]) & (
+        df["ran_delay_ms"] >= 0
+    )
+    dropped = int((~valid_ran).sum())
+    if dropped:
+        print(f"WARN: {csv_path.name}: dropping {dropped} invalid RAN-delay row(s)")
+    df = df.loc[valid_ran].copy()
     # Match naming used for 5G-LENA-side plots in this script.
     df["tx_retx_delay_ms"] = (
         df.get("transmission_delay_ms", pd.Series(dtype=float)).fillna(0.0)
@@ -270,6 +281,13 @@ def load_lena_delay_decomposition_csv_metrics(csv_path: Path) -> pd.DataFrame | 
             )
     for col in LENA_CSV_REQUIRED_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+    valid_ran = df["ran_delay_ms"].notna() & np.isfinite(df["ran_delay_ms"]) & (
+        df["ran_delay_ms"] >= 0
+    )
+    dropped = int((~valid_ran).sum())
+    if dropped:
+        print(f"WARN: {csv_path.name}: dropping {dropped} invalid RAN-delay row(s)")
+    df = df.loc[valid_ran].copy()
     return df
 
 

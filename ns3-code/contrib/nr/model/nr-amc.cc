@@ -229,7 +229,7 @@ NrAmc::CreateCqiFeedbackSiso(const SpectrumValue& sinr, uint8_t& mcs) const
                                                             tbSize,
                                                             mcs,
                                                             NrErrorModel::NrErrorModelHistory());
-            if (output->m_tbler > 0.1)
+            if (output->m_tbler > 0.15)
             {
                 break;
             }
@@ -241,13 +241,13 @@ NrAmc::CreateCqiFeedbackSiso(const SpectrumValue& sinr, uint8_t& mcs) const
             mcs--;
         }
 
-        if ((output->m_tbler > 0.1) && (mcs == 0))
+        if ((output->m_tbler > 0.15) && (mcs == 0))
         {
             cqi = 0;
         }
         else if (mcs == m_errorModel->GetMaxMcs())
         {
-            cqi = 15; // all MCSs can guarantee the 10 % of BER
+            cqi = 15; // All MCSs satisfy the target TBLER.
         }
         else
         {
@@ -440,8 +440,7 @@ NrAmc::GetMaxMcsForErrorModel(const NrSinrMatrix& sinrMat) const
     while (mcs <= m_errorModel->GetMaxMcs())
     {
         auto tbler = CalcTblerForMimoMatrix(mcs, sinrMat);
-        // TODO: Change target TBLER from default 0.1 when using MCS table 3
-        if (tbler > 0.1)
+        if (tbler > 0.15)
         {
             break;
         }

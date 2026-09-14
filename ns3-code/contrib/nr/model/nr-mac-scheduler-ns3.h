@@ -459,6 +459,17 @@ class NrMacSchedulerNs3 : public NrMacScheduler
     int8_t GetMaxDlMcs() const;
 
     /**
+     * @brief Set the maximum index for the UL MCS
+     * @param v the value, or -1 to disable the limit
+     */
+    void SetMaxUlMcs(int8_t v);
+    /**
+     * @brief Get the maximum UL MCS index
+     * @return the value, or -1 when the limit is disabled
+     */
+    int8_t GetMaxUlMcs() const;
+
+    /**
      * @brief Set LC Scheduler Algorithm model type
      * @param type the LC Scheduler Algorithm Error model type
      */
@@ -750,12 +761,27 @@ class NrMacSchedulerNs3 : public NrMacScheduler
     bool m_activeUlAi{false}; //!< Flag for activating AI for uplink
 
     /**
+     * @brief Apply the persistent UL MCS limit used by scheduling metrics and DCIs.
+     */
+    uint8_t GetCappedUlMcs(uint8_t ulMcs) const;
+
+    /**
      * @brief Return the UL MCS to use for a UL DCI.
      *
-     * If bootstrap MCS limiting is enabled and the UE is being served due to SR in the
-     * currently scheduled UL slot, clamp to min(estimated UL MCS, bootstrap limit).
+     * Apply the configured general UL MCS limit, then apply the bootstrap MCS limit if enabled
+     * and the scheduler had no buffered-byte estimate when the UE sent SR.
      */
     uint8_t GetEffectiveUlMcs(uint16_t rnti, uint8_t ulMcs) const;
+
+    /**
+     * @brief Check whether the next UL grant for a UE is an SR bootstrap grant.
+     */
+    bool IsUlBootstrapPending(uint16_t rnti) const;
+
+    /**
+     * @brief Return the number of RBGs needed for the five-PRB bootstrap grant.
+     */
+    uint32_t GetUlBootstrapGrantRbgCount() const;
 
   private:
     /**
@@ -881,11 +907,12 @@ class NrMacSchedulerNs3 : public NrMacScheduler
                              const ActiveUeMap& activeUl,
                              SlotAllocInfo* slotAlloc) const;
     uint8_t DoScheduleUlMsg3(PointInFTPlane* sPoint, uint8_t symAvail, SlotAllocInfo* slotAlloc);
-    void DoScheduleUlSr(PointInFTPlane* spoint, const std::list<uint16_t>& rntiList) const;
+    void DoScheduleUlSr(PointInFTPlane* spoint, const std::list<uint16_t>& rntiList);
     uint8_t DoScheduleDl(const std::vector<DlHarqInfo>& dlHarqFeedback,
                          const ActiveHarqMap& activeDlHarq,
                          ActiveUeMap* activeDlUe,
                          const SfnSf& dlSfnSf,
+                         LteNrTddSlotType type,
                          const SlotElem& ulAllocations,
                          SlotAllocInfo* allocInfo);
     uint8_t DoScheduleUl(const std::vector<UlHarqInfo>& ulHarqFeedback,
@@ -981,6 +1008,7 @@ class NrMacSchedulerNs3 : public NrMacScheduler
     uint8_t m_startMcsUl{0};   //!< Starting (or fixed) value for UL MCS
     uint8_t m_bootstrapMcsLimitUl{9}; //!< Cap used for SR bootstrap grants when enabled
     int8_t m_maxDlMcs{0};      //!< Maximum index for DL MCS
+    int8_t m_maxUlMcs{-1};     //!< Maximum index for UL MCS; -1 disables the limit
     Time m_cqiTimersThreshold; //!< The time while a CQI is valid
 
     uint8_t m_rachUlGrantMcs{0}; //!< The MCS that will be used for UL RACH grant
@@ -995,13 +1023,16 @@ class NrMacSchedulerNs3 : public NrMacScheduler
         m_ulHarqToRetransmit; //!< List of UL HARQ that could not have been retransmitted
 
     std::list<uint16_t> m_srList; //!< List of RNTI of UEs that asked for a SR
-    std::unordered_set<uint16_t> m_srBootstrapUesThisTti; //!< SR UEs in current UL scheduling pass
+    mutable std::unordered_set<uint16_t>
+        m_srBootstrapUesPending; //!< Zero-estimate SR UEs awaiting a bootstrap grant
 
     std::vector<struct nr::RachListElement_s> m_rachList; //!< rach list
 
     uint16_t m_bandwidth{0};         //!< Bandwidth in number of RBG
     uint8_t m_dlCtrlSymbols{0};      //!< DL ctrl symbols (attribute)
     uint8_t m_ulCtrlSymbols{0};      //!< UL ctrl symbols (attribute)
+    uint8_t m_fSlotDlAllocationSymbols{0}; //!< DL allocation-symbol limit in F slots
+    uint8_t m_fSlotUlAllocationSymbols{0}; //!< UL allocation-symbol limit in F slots
     uint8_t m_srsCtrlSymbols{0};     //!< SRS symbols (attribute)
     bool m_enableSrsInUlSlots{true}; //!< SRS allowed in UL slots (attribute)
     bool m_enableSrsInFSlots{true};  //!< SRS allowed in F slots (attribute)

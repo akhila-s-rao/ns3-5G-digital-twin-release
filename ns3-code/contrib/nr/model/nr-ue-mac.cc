@@ -20,6 +20,7 @@
 
 #include "ns3/boolean.h"
 #include "ns3/log.h"
+#include "ns3/nstime.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/uinteger.h"
 
@@ -215,6 +216,24 @@ NrUeMac::GetTypeId()
                 UintegerValue(16),
                 MakeUintegerAccessor(&NrUeMac::SetNumHarqProcess, &NrUeMac::GetNumHarqProcess),
                 MakeUintegerChecker<uint8_t>())
+            .AddAttribute("RetxBsrTimer",
+                          "Time to wait after an SR or new-data UL grant before requesting "
+                          "another grant while data remains buffered",
+                          TimeValue(MilliSeconds(10)),
+                          MakeTimeAccessor(&NrUeMac::m_retxBsrTimerValue),
+                          MakeTimeChecker(MilliSeconds(1)))
+            .AddAttribute("SrPeriodicitySlots",
+                          "Period of the UE's SR opportunity grid in slots; zero sends a "
+                          "pending SR at the next MAC slot as before",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(&NrUeMac::m_srPeriodicitySlots),
+                          MakeUintegerChecker<uint32_t>())
+            .AddAttribute("SrOffsetSlots",
+                          "Slot offset of the UE's SR opportunity grid. This is the MAC enqueue "
+                          "slot; the PHY subsequently applies its control-message latency",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(&NrUeMac::m_srOffsetSlots),
+                          MakeUintegerChecker<uint32_t>())
             .AddTraceSource("UeMacRxedCtrlMsgsTrace",
                             "Ue MAC Control Messages Traces.",
                             MakeTraceSourceAccessor(&NrUeMac::m_macRxedCtrlMsgsTrace),
@@ -251,6 +270,7 @@ NrUeMac::~NrUeMac()
 void
 NrUeMac::DoDispose()
 {
+    StopRetxBsrTimer();
     m_miUlHarqProcessesPacket.clear();
     m_miUlHarqProcessesPacketTimer.clear();
     m_ulBsrReceived.clear();
@@ -432,36 +452,24 @@ NrUeMac::DoTransmitBufferStatusReport(NrMacSapProvider::BufferStatusReportParame
         it = m_ulBsrReceived.insert(std::make_pair(params.lcid, params)).first;
     }
 
-    const bool hasData = (GetTotalBufSize() > 0); // codex edited
-    if (m_srState == INACTIVE ||
-        (params.expBsrTimer && m_srState == ACTIVE && hasData)) // codex edited: re-trigger SR/BSR when data persists
+    const bool hasData = GetTotalBufSize() > 0;
+    if (!hasData)
     {
-        if (m_srState == INACTIVE)
-        {
-            NS_LOG_INFO("m_srState = INACTIVE -> TO_SEND, bufSize " << GetTotalBufSize());
-            m_macUeStateMachine(m_currentSlot,
-                                GetCellId(),
-                                m_rnti,
-                                GetBwpId(),
-                                m_srState,
-                                m_ulBsrReceived,
-                                1,
-                                "DoTransmitBufferStatusReport");
-        }
-        else
-        {
-            NS_LOG_INFO("m_srState = ACTIVE (BSR Timer expired) -> TO_SEND, bufSize "
-                        << GetTotalBufSize());
-            m_macUeStateMachine(m_currentSlot,
-                                GetCellId(),
-                                m_rnti,
-                                GetBwpId(),
-                                m_srState,
-                                m_ulBsrReceived,
-                                0,
-                                "DoTransmitBufferStatusReport");
-        }
+        StopRetxBsrTimer();
+        m_srState = INACTIVE;
+    }
+    else if (m_srState == INACTIVE)
+    {
         m_srState = TO_SEND;
+        NS_LOG_INFO("m_srState = INACTIVE -> TO_SEND, bufSize " << GetTotalBufSize());
+        m_macUeStateMachine(m_currentSlot,
+                            GetCellId(),
+                            m_rnti,
+                            GetBwpId(),
+                            m_srState,
+                            m_ulBsrReceived,
+                            1,
+                            "DoTransmitBufferStatusReport");
     }
 }
 
@@ -613,7 +621,7 @@ NrUeMac::DoSlotIndication(const SfnSf& sfn)
 
     RefreshHarqProcessesPacketBuffer();
 
-    if (m_srState == TO_SEND)
+    if (m_srState == TO_SEND && IsSrOpportunity(sfn))
     {
         NS_LOG_INFO("Sending SR to PHY in slot " << sfn);
         SendSR();
@@ -632,8 +640,20 @@ NrUeMac::DoSlotIndication(const SfnSf& sfn)
     // Feedback missing
 }
 
+bool
+NrUeMac::IsSrOpportunity(const SfnSf& sfn) const
+{
+    if (m_srPeriodicitySlots == 0)
+    {
+        return true;
+    }
+
+    return sfn.Normalize() % m_srPeriodicitySlots ==
+           m_srOffsetSlots % m_srPeriodicitySlots;
+}
+
 void
-NrUeMac::SendSR() const
+NrUeMac::SendSR()
 {
     NS_LOG_FUNCTION(this);
 
@@ -650,6 +670,48 @@ NrUeMac::SendSR() const
 
     m_macTxedCtrlMsgsTrace(m_currentSlot, GetCellId(), m_rnti, GetBwpId(), msg);
     m_phySapProvider->SendControlMessage(msg);
+    RestartRetxBsrTimer();
+}
+
+void
+NrUeMac::RestartRetxBsrTimer()
+{
+    m_retxBsrTimer.Cancel();
+    m_retxBsrTimer =
+        Simulator::Schedule(m_retxBsrTimerValue, &NrUeMac::ExpireRetxBsrTimer, this);
+}
+
+void
+NrUeMac::StopRetxBsrTimer()
+{
+    m_retxBsrTimer.Cancel();
+}
+
+void
+NrUeMac::ExpireRetxBsrTimer()
+{
+    NS_LOG_FUNCTION(this);
+
+    if (GetTotalBufSize() == 0)
+    {
+        m_srState = INACTIVE;
+        return;
+    }
+
+    if (m_srState == ACTIVE)
+    {
+        m_srState = TO_SEND;
+        NS_LOG_INFO("RetxBsrTimer expired with " << GetTotalBufSize()
+                                                 << " buffered bytes; requesting another SR");
+        m_macUeStateMachine(m_currentSlot,
+                            GetCellId(),
+                            m_rnti,
+                            GetBwpId(),
+                            m_srState,
+                            m_ulBsrReceived,
+                            0,
+                            "ExpireRetxBsrTimer");
+    }
 }
 
 void
@@ -793,6 +855,7 @@ NrUeMac::ProcessUlDci(const Ptr<NrUlDciMessage>& dciMsg)
 
         if (GetTotalBufSize() == 0)
         {
+            StopRetxBsrTimer();
             m_srState = INACTIVE;
             NS_LOG_INFO("m_srState = ACTIVE -> INACTIVE, bufSize " << GetTotalBufSize());
 
@@ -815,6 +878,11 @@ NrUeMac::ProcessUlDci(const Ptr<NrUlDciMessage>& dciMsg)
 
                 DoTransmitPdu(txParams);
             }
+        }
+        else
+        {
+            m_srState = ACTIVE;
+            RestartRetxBsrTimer();
         }
     }
 }
@@ -1332,6 +1400,7 @@ void
 NrUeMac::DoReset()
 {
     NS_LOG_FUNCTION(this);
+    StopRetxBsrTimer();
     auto it = m_lcInfoMap.begin();
     while (it != m_lcInfoMap.end())
     {
@@ -1351,6 +1420,7 @@ NrUeMac::DoReset()
     m_noRaResponseReceivedEvent.Cancel();
     m_rachConfigured = false;
     m_ulBsrReceived.clear();
+    m_srState = INACTIVE;
 }
 
 //////////////////////////////////////////////

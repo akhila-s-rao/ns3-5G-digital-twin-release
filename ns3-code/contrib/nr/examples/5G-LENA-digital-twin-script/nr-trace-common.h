@@ -84,6 +84,21 @@ WriteUeSinrTrace(Ptr<OutputStreamWrapper> stream,
 }
 
 inline void
+UePuschTxPowerTraceCallback(Ptr<OutputStreamWrapper> stream,
+                            uint16_t cellId,
+                            uint16_t rnti,
+                            double txPowerDbm)
+{
+    if (!IsStreamReady(stream))
+    {
+        return;
+    }
+
+    *stream->GetStream() << Simulator::Now().GetMicroSeconds() << "\t" << cellId << "\t"
+                         << rnti << "\t" << txPowerDbm << std::endl;
+}
+
+inline void
 WriteRxPduTrace(Ptr<OutputStreamWrapper> stream,
                 uint16_t cellId,
                 uint16_t rnti,

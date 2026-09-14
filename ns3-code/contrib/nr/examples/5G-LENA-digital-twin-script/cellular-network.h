@@ -50,6 +50,7 @@
 #include "ns3/nr-gnb-rrc.h"
 #include "ns3/nr-ue-rrc.h"
 #include "ns3/nr-ue-mac.h"
+#include "ns3/nr-ue-power-control.h"
 #include "ns3/nr-eps-bearer.h"
 #include "ns3/nr-spectrum-phy.h"
 #include "ns3/seq-ts-size-frag-header.h"
@@ -59,6 +60,7 @@
 #include "ns3/nr-control-messages.h"
 #include "ns3/nr-common.h"
 #include "ns3/nr-mac-short-bsr-ce.h"
+#include "digital-twin-radio-profile.h"
 #include "nr-trace-streams.h"
 
 #ifndef CELLULAR_NETWORK_FUNCTION_H
@@ -118,7 +120,7 @@ class NrHelper;
 
 // Contains all parameters we are setting. Command line user settable parameters are in
 // cellular-network-user.cc; the rest are fixed defaults here.
-struct Parameters
+struct Parameters : CommonRadioParameters
 {
     friend std::ostream& operator<< (std::ostream& os, const Parameters& parameters);
 
@@ -140,28 +142,21 @@ struct Parameters
     // NR RAN parameters (Reference: 3GPP TR 38.901 V17.0.0 (Release 17)
     // Table 7.8-1 for the power and BW).
     // This example uses a single operational band/BWP
-    uint16_t numerologyBwp1 = 1;
     std::string channelScenario = "InH-OfficeOpen"; // "InH-OfficeMixed", "InH-OfficeOpen", "UMa"
     // Channel update period: forces regeneration of channel parameters over time (time-varying fading).
     Time channelUpdatePeriod = MilliSeconds(20);
     // Channel condition update period: recomputes LOS/NLOS (and O2I if enabled) over time.
     Time channelConditionUpdatePeriod = Seconds(10);
-    double centralFrequencyBand = 3.5e9;
-    double bandwidthHz = 40e6;
-    // the pattern length needs to be as long as the number of slots in a 10 ms frame
-    // So adjust according to your numerology 
-    std::string tddPattern
-        = "DL|DL|DL|S|UL|DL|DL|DL|S|UL|DL|DL|DL|S|UL|DL|DL|DL|S|UL";
     uint16_t BsTxPower = 20; // dBm at the gNB.
     bool enableUlPc = true;  // Enable UE uplink power control.
+    double ulPowerControlAlpha = 1.0;
+    double uePcminDbm = -40.0;
+    double uePcmaxDbm = 23.0;
+    NrUePowerControl::TechnicalSpec ulPowerControlTechnicalSpec = NrUePowerControl::TS_38_213;
+    bool shadowingEnabled = false;
     uint16_t NumberOfRaPreambles = 40; // Random-access preamble pool size.
     bool UseIdealRrc = true; // Ideal RRC to avoid control-channel errors.
-    uint32_t numRbPerRbg = 5; // NR scheduler RBG size in RBs.
     bool enableBootstrapMcsLimit = true; // Cap SR bootstrap UL grant MCS to min(estimated, 9).
-    
-    // Buffer sizes (bytes).
-    uint32_t rlcTxBuffSize = 80 * 1024; // default is 10240 
-    uint32_t tcpUdpBuffSize = 500 * 1024; // default is 131072
 
     // Position and mobility model (UEs). gNB is fixed at origin.
     double boundingBoxMinX = -45.0;
@@ -217,10 +212,10 @@ struct Parameters
         std::string scenario = digitalTwinScenario;
         std::transform(scenario.begin(), scenario.end(), scenario.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        // This is the default scenatio so nothing to change
         if (scenario == "expeca")
         {
             digitalTwinScenario = "expeca";
+            ApplyExpecaRadioProfile(*this);
             return;
         }
         // Add here if you want a parameter to be part of the scenario specific setting
@@ -234,6 +229,10 @@ struct Parameters
             centralFrequencyBand = 0.0;
             bandwidthHz = 0.0;
             tddPattern.clear();
+            n2DelaySlots = 2;
+            ulSchedulerLookaheadSlots = 2;
+            srPeriodicitySlots = 0;
+            srOffsetSlots = 0;
             BsTxPower = 0;
             enableUlPc = false;
             NumberOfRaPreambles = 0;
@@ -254,6 +253,22 @@ struct Parameters
         NS_ABORT_MSG_IF(!(vrTrafficType == "trace" || vrTrafficType == "synthetic" ||
                           vrTrafficType == "none"),
                         "vrTrafficType must be 'trace', 'synthetic', or 'none'");
+        NS_ABORT_MSG_IF(maxUlMcs > 27, "maxUlMcs must be in [0,27] for NrEesmCcT2");
+        NS_ABORT_MSG_IF(ueAntennaRows == 0 || ueAntennaColumns == 0 || gnbAntennaRows == 0 ||
+                            gnbAntennaColumns == 0,
+                        "antenna array dimensions must be positive");
+        NS_ABORT_MSG_IF(poNominalPusch < -126 || poNominalPusch > 24,
+                        "poNominalPusch must be in [-126,24] dBm");
+        NS_ABORT_MSG_IF(ulPowerControlAlpha < 0.0 || ulPowerControlAlpha > 1.0,
+                        "ulPowerControlAlpha must be in [0,1]");
+        NS_ABORT_MSG_IF(uePcminDbm > uePcmaxDbm, "uePcminDbm must not exceed uePcmaxDbm");
+        NS_ABORT_MSG_IF(ueNoiseFigureDb < 0.0 || gnbNoiseFigureDb < 0.0,
+                        "UE and gNB noise figures must be non-negative");
+        NS_ABORT_MSG_IF(srPeriodicitySlots > 0 && srOffsetSlots >= srPeriodicitySlots,
+                        "srOffsetSlots must be smaller than srPeriodicitySlots");
+        NS_ABORT_MSG_IF(n2DelaySlots > 32, "n2DelaySlots must be in [0,32]");
+        NS_ABORT_MSG_IF(ulSchedulerLookaheadSlots > 32,
+                        "ulSchedulerLookaheadSlots must be in [0,32]");
         if (vrTrafficType == "trace")
         {
             NS_ABORT_MSG_IF(vrFrameRate != 30 && vrFrameRate != 60,
@@ -594,7 +609,9 @@ void CreateTraceFiles (void);
 void InitializeCellBwpNumRbPerRbg(const NetDeviceContainer& gnbNetDev);
 void SetupDlMacPrbLogging();
 void SetupUlMacPrbLogging();
-void SetupNrTraces(const NetDeviceContainer& gnbNetDev, const Ptr<NrHelper>& helper);
+void SetupNrTraces(const NetDeviceContainer& gnbNetDev,
+                   const NetDeviceContainer& ueNetDev,
+                   const Ptr<NrHelper>& helper);
 void SetupSrsSinrLogging(const NetDeviceContainer& gnbNetDev, Ptr<NrHelper> helper);
 std::string DciTypeToString(DciInfoElementTdma::VarTtiType type);
 void UePhyCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
@@ -603,6 +620,16 @@ void UePhyCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
                       uint16_t rnti,
                       uint8_t bwpId,
                       Ptr<const NrControlMessage> msg);
+void UeMacSrTriggerTrace(
+    Ptr<OutputStreamWrapper> stream,
+    const SfnSf sfn,
+    uint16_t nodeId,
+    uint16_t rnti,
+    uint8_t bwpId,
+    NrUeMac::SrBsrMachine srState,
+    std::unordered_map<uint8_t, NrMacSapProvider::BufferStatusReportParameters> ulBsrReceived,
+    int retx,
+    std::string trigger);
 void DlDciTrace(std::string path,
                 const SfnSf sfn,
                 uint16_t cellId,
@@ -1193,7 +1220,9 @@ SetupUlMacPrbLogging()
 }
 
 void
-SetupNrTraces(const NetDeviceContainer& gnbNetDev, const Ptr<NrHelper>& helper)
+SetupNrTraces(const NetDeviceContainer& gnbNetDev,
+              const NetDeviceContainer& ueNetDev,
+              const Ptr<NrHelper>& helper)
 {
     Config::Connect("/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUePhy/DlDataSinr",
                     MakeBoundCallback(&DlDataSinrTraceCallback, dlDataSinrStream));
@@ -1220,9 +1249,24 @@ SetupNrTraces(const NetDeviceContainer& gnbNetDev, const Ptr<NrHelper>& helper)
     Config::ConnectWithoutContext(
         "/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUePhy/UePhyTxedCtrlMsgsTrace",
         MakeBoundCallback(&UePhyCtrlTxTrace, uePhyCtrlTxStream));
+    Config::ConnectWithoutContext(
+        "/NodeList/*/DeviceList/*/ComponentCarrierMapUe/*/NrUeMac/UeMacStateMachineTrace",
+        MakeBoundCallback(&UeMacSrTriggerTrace, ueMacStateStream));
     SetupDlMacPrbLogging();
     SetupUlMacPrbLogging();
     SetupSrsSinrLogging(gnbNetDev, helper);
+    for (uint32_t i = 0; i < ueNetDev.GetN(); ++i)
+    {
+        Ptr<NrUeNetDevice> ue = ueNetDev.Get(i)->GetObject<NrUeNetDevice>();
+        for (uint32_t bwpId = 0; ue != nullptr && bwpId < ue->GetCcMapSize(); ++bwpId)
+        {
+            helper->GetUePhy(ueNetDev.Get(i), bwpId)
+                ->GetUplinkPowerControl()
+                ->TraceConnectWithoutContext(
+                    "ReportPuschTxPower",
+                    MakeBoundCallback(&UePuschTxPowerTraceCallback, uePuschTxPowerStream));
+        }
+    }
     Config::Connect("/NodeList/*/DeviceList/*/BandwidthPartMap/*/NrGnbPhy/GnbPhyTxedCtrlMsgsTrace",
                     MakeCallback(&DlDciTrace));
     Config::Connect("/NodeList/*/DeviceList/*/BandwidthPartMap/*/NrGnbPhy/GnbPhyTxedCtrlMsgsTrace",
@@ -1289,6 +1333,48 @@ UePhyCtrlTxTrace(Ptr<OutputStreamWrapper> stream,
         << static_cast<uint32_t>(bwpId) << "\t" << static_cast<uint32_t>(sfn.GetFrame()) << "\t"
         << static_cast<uint32_t>(sfn.GetSubframe()) << "\t" << static_cast<uint32_t>(sfn.GetSlot())
         << "\t" << ControlMsgTypeToString(msg->GetMessageType()) << std::endl;
+}
+
+void
+UeMacSrTriggerTrace(
+    Ptr<OutputStreamWrapper> stream,
+    const SfnSf sfn,
+    uint16_t nodeId,
+    uint16_t rnti,
+    uint8_t bwpId,
+    NrUeMac::SrBsrMachine srState,
+    [[maybe_unused]] std::unordered_map<uint8_t, NrMacSapProvider::BufferStatusReportParameters>
+        ulBsrReceived,
+    int retx,
+    std::string trigger)
+{
+    if (!IsStreamReady(stream) || srState != NrUeMac::TO_SEND)
+    {
+        return;
+    }
+
+    std::string srType;
+    if (trigger == "DoTransmitBufferStatusReport" && retx == 1)
+    {
+        srType = "INITIAL";
+    }
+    else if (trigger == "ExpireRetxBsrTimer" && retx == 0)
+    {
+        srType = "RECOVERY";
+    }
+    else
+    {
+        return;
+    }
+
+    const uint16_t ueId = GetUeIdFromNodeId(nodeId);
+    const auto ids = MakeUeTraceIds(ueId);
+    *stream->GetStream()
+        << Simulator::Now().GetMicroSeconds() << "\t" << nodeId << "\t" << ueId << "\t"
+        << ids.imsi << "\t" << ids.cellId << "\t" << rnti << "\t"
+        << static_cast<uint32_t>(bwpId) << "\t" << static_cast<uint32_t>(sfn.GetFrame()) << "\t"
+        << static_cast<uint32_t>(sfn.GetSubframe()) << "\t" << static_cast<uint32_t>(sfn.GetSlot())
+        << "\t" << srType << "\t" << trigger << std::endl;
 }
 
 std::string
@@ -1736,6 +1822,12 @@ void CreateTraceFiles (void)
     WriteHeader(uePhyCtrlTxStream,
                 "time_us\tnode_id\tue_id\timsi\tcell_id\trnti\tbwp_id\tframe\tsubframe\t"
                 "slot\tmsg_type");
+    ueMacStateStream = traceHelper.CreateFileStream("UeMacSrTriggerTrace.txt");
+    WriteHeader(ueMacStateStream,
+                "time_us\tnode_id\tue_id\timsi\tcell_id\trnti\tbwp_id\tframe\tsubframe\t"
+                "slot\tsr_type\ttrigger");
+    uePuschTxPowerStream = traceHelper.CreateFileStream("UePuschTxPowerTrace.txt");
+    WriteHeader(uePuschTxPowerStream, "time_us\tcell_id\trnti\tpusch_tx_power_dbm");
 
 }    
     
@@ -1764,6 +1856,55 @@ void PrintSimInfoToFile()
     *simInfoStream->GetStream() << "rand_seed," << global_params.randSeed << std::endl;
     *simInfoStream->GetStream() << "vr_bearer_qci," << +global_params.vrBearerQci << std::endl;
     *simInfoStream->GetStream() << "control_bearer_qci," << +global_params.controlBearerQci
+                                << std::endl;
+    *simInfoStream->GetStream() << "max_ul_mcs," << global_params.maxUlMcs << std::endl;
+    *simInfoStream->GetStream() << "tdd_pattern," << global_params.tddPattern << std::endl;
+    *simInfoStream->GetStream() << "f_slot_dl_allocation_symbols,"
+                                << global_params.fSlotDlAllocationSymbols << std::endl;
+    *simInfoStream->GetStream() << "f_slot_ul_allocation_symbols,"
+                                << global_params.fSlotUlAllocationSymbols << std::endl;
+    *simInfoStream->GetStream() << "srs_in_f_slots,"
+                                << (global_params.enableSrsInFSlots ? 1 : 0) << std::endl;
+    *simInfoStream->GetStream() << "srs_in_ul_slots,"
+                                << (global_params.enableSrsInUlSlots ? 1 : 0) << std::endl;
+    *simInfoStream->GetStream() << "srs_periodicity_ul_opportunities,"
+                                << global_params.srsPeriodicityUlOpportunities << std::endl;
+    *simInfoStream->GetStream() << "ue_antenna_rows," << global_params.ueAntennaRows << std::endl;
+    *simInfoStream->GetStream() << "ue_antenna_columns," << global_params.ueAntennaColumns
+                                << std::endl;
+    *simInfoStream->GetStream() << "gnb_antenna_rows," << global_params.gnbAntennaRows << std::endl;
+    *simInfoStream->GetStream() << "gnb_antenna_columns," << global_params.gnbAntennaColumns
+                                << std::endl;
+    *simInfoStream->GetStream() << "po_nominal_pusch_dbm," << global_params.poNominalPusch
+                                << std::endl;
+    *simInfoStream->GetStream() << "ul_power_control_alpha," << global_params.ulPowerControlAlpha
+                                << std::endl;
+    *simInfoStream->GetStream() << "ue_pcmin_dbm," << global_params.uePcminDbm << std::endl;
+    *simInfoStream->GetStream() << "ue_pcmax_dbm," << global_params.uePcmaxDbm << std::endl;
+    *simInfoStream->GetStream()
+        << "ul_power_control_technical_spec,"
+        << (global_params.ulPowerControlTechnicalSpec == NrUePowerControl::TS_38_213 ? "TS38.213"
+                                                                                     : "TS36.213")
+        << std::endl;
+    *simInfoStream->GetStream() << "gnb_noise_figure_db," << global_params.gnbNoiseFigureDb
+                                << std::endl;
+    *simInfoStream->GetStream() << "ue_noise_figure_db," << global_params.ueNoiseFigureDb
+                                << std::endl;
+    *simInfoStream->GetStream() << "shadowing_enabled,"
+                                << (global_params.shadowingEnabled ? 1 : 0) << std::endl;
+    *simInfoStream->GetStream() << "n2_delay_slots," << global_params.n2DelaySlots
+                                << std::endl;
+    *simInfoStream->GetStream() << "ue_l1_l2_ctrl_latency_slots,"
+                                << global_params.ueL1L2CtrlLatencySlots << std::endl;
+    *simInfoStream->GetStream() << "gnb_l1_l2_ctrl_latency_slots,"
+                                << global_params.gnbL1L2CtrlLatencySlots << std::endl;
+    *simInfoStream->GetStream() << "gnb_tb_decode_latency_us,"
+                                << global_params.gnbTbDecodeLatencyUs << std::endl;
+    *simInfoStream->GetStream() << "ul_scheduler_lookahead_slots,"
+                                << global_params.ulSchedulerLookaheadSlots << std::endl;
+    *simInfoStream->GetStream() << "sr_periodicity_slots,"
+                                << global_params.srPeriodicitySlots << std::endl;
+    *simInfoStream->GetStream() << "sr_offset_slots," << global_params.srOffsetSlots
                                 << std::endl;
     *simInfoStream->GetStream() << "enable_bootstrap_mcs_limit,"
                                 << (global_params.enableBootstrapMcsLimit ? 1 : 0) << std::endl;
@@ -1796,6 +1937,14 @@ operator<< (std::ostream& os, const Parameters& parameters)
        << "  bandwidthHz: " << parameters.bandwidthHz << std::endl
        << "  numerology: " << parameters.numerologyBwp1 << std::endl
        << "  numRbPerRbg: " << parameters.numRbPerRbg << std::endl
+       << "  n2DelaySlots: " << parameters.n2DelaySlots << std::endl
+       << "  ueL1L2CtrlLatencySlots: " << parameters.ueL1L2CtrlLatencySlots << std::endl
+       << "  gnbL1L2CtrlLatencySlots: " << parameters.gnbL1L2CtrlLatencySlots << std::endl
+       << "  gnbTbDecodeLatencyUs: " << parameters.gnbTbDecodeLatencyUs << std::endl
+       << "  ulSchedulerLookaheadSlots: " << parameters.ulSchedulerLookaheadSlots << std::endl
+       << "  srPeriodicitySlots: " << parameters.srPeriodicitySlots << std::endl
+       << "  srOffsetSlots: " << parameters.srOffsetSlots << std::endl
+       << "  maxUlMcs: " << parameters.maxUlMcs << std::endl
        << "  enableBootstrapMcsLimit: " << parameters.enableBootstrapMcsLimit << std::endl
        << "  tddPattern: " << parameters.tddPattern << std::endl
        << "  BsTxPower: " << parameters.BsTxPower << " dBm\n"

@@ -198,7 +198,6 @@ class NrRlcAm : public NrRlc
     Time m_statusProhibitTimerValue; ///< status prohibit timer value
     EventId m_bsrTimer;              ///< BSR timer
     Time m_bsrTimerValue;            ///< BSR timer value
-    bool m_expBsrTimer{false};       ///< true when periodic BSR timer just expired
 
     /**
      * Configurable parameters. See section 7.4 in TS 36.322

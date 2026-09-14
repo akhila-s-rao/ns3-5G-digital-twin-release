@@ -19,10 +19,23 @@ Both scenarios use the same shared 5G network setup:
 - single component carrier and single bandwidth part
 - 3.5 GHz carrier frequency and 40 MHz bandwidth (giving us 106 PRBs)
 - numerology 1
-- TDD pattern `DL|DL|DL|S|UL` repeated across the 10 ms frame
+- TDD pattern `DL|DL|DL|F|UL` repeated across the 10 ms frame, with each 5G-LENA `F` slot
+  constrained to reproduce the ExPeCA/OAI special-slot layout: one DL-control symbol, five DL-data
+  symbols, four unused guard symbols, three UL-data symbols, and one UL-control symbol
 - OFDMA proportional-fair scheduler
-- realistic beamforming triggered from SRS measurements
+- realistic beamforming triggered from SRS measurements; SRS is scheduled in full `UL` slots but
+  not in constrained `F` slots
 - UE uplink power control enabled
+- adaptive UL AMC with `maxUlMcs=20` in the Expeca profile; this limit is applied independently of the
+  existing MCS 9 cap for SR bootstrap grants
+
+The shared Expeca radio settings used by both simulation scenarios are defined in
+`digital-twin-radio-profile.h`. This includes carrier, bandwidth, numerology, TDD, antenna,
+RBG, buffer, UL MCS cap, noise figure, PUSCH power target, K2, SR-periodicity, flexible-slot,
+and SRS settings.
+The profile also sets the gNB UL scheduler lookahead to 6 slots to model the UL effect of OAI
+`sl_ahead` independently of DL/RAR scheduling, K2, and UE PHY control-message latency.
+The scenarios activate this lookahead after initial access and before application traffic starts.
 
 ## Scenario 1: Bursty Traffic
 
@@ -65,7 +78,8 @@ The scenario differs from the bursty traffic scenario in these main ways:
 - it uses fixed UE positions instead of mobile UEs
 - the number of UEs is set from the load mode: 1 UE when there is no background load, 2 UEs when TCP or UDP
   background load is enabled
-- the UE that does not send any backgropund load sends uplink and downlink delay probes 
+- UE 0 sends the configured delay probes; in background-load runs, UE 1 carries only the
+  background traffic
 
 ### Benchmarking Traffic Experiment Runs
 

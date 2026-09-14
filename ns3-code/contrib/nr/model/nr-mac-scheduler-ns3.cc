@@ -58,7 +58,7 @@ NrMacSchedulerNs3::NrMacSchedulerNs3()
     m_cqiManagement.InstallGetNrAmcDlFn([this]() { return m_dlAmc; });
     m_cqiManagement.InstallGetNrAmcUlFn([this]() { return m_ulAmc; });
     m_cqiManagement.InstallGetStartMcsDlFn([this]() { return m_startMcsDl; });
-    m_cqiManagement.InstallGetStartMcsUlFn([this]() { return m_startMcsUl; });
+    m_cqiManagement.InstallGetStartMcsUlFn([this]() { return GetCappedUlMcs(m_startMcsUl); });
 
     // If more Srs allocators will be created, then we will add an attribute
     m_schedulerSrs = CreateObject<NrMacSchedulerSrsDefault>();
@@ -162,6 +162,20 @@ NrMacSchedulerNs3::GetTypeId()
                           MakeUintegerAccessor(&NrMacSchedulerNs3::SetUlCtrlSyms,
                                                &NrMacSchedulerNs3::GetUlCtrlSyms),
                           MakeUintegerChecker<uint8_t>())
+            .AddAttribute("FSlotDlAllocationSymbols",
+                          "Maximum symbols available to DL allocation in an F slot; "
+                          "zero preserves dynamic allocation",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(
+                              &NrMacSchedulerNs3::m_fSlotDlAllocationSymbols),
+                          MakeUintegerChecker<uint8_t>(0, 12))
+            .AddAttribute("FSlotUlAllocationSymbols",
+                          "Maximum symbols available to UL allocation, including SRS, in an F "
+                          "slot; zero preserves dynamic allocation",
+                          UintegerValue(0),
+                          MakeUintegerAccessor(
+                              &NrMacSchedulerNs3::m_fSlotUlAllocationSymbols),
+                          MakeUintegerChecker<uint8_t>(0, 12))
             .AddAttribute("SrsSymbols",
                           "Number of symbols allocated for UL SRS",
                           UintegerValue(1),
@@ -199,6 +213,12 @@ NrMacSchedulerNs3::GetTypeId()
                           IntegerValue(-1),
                           MakeIntegerAccessor(&NrMacSchedulerNs3::SetMaxDlMcs,
                                               &NrMacSchedulerNs3::GetMaxDlMcs),
+                          MakeIntegerChecker<int8_t>(-1, 30))
+            .AddAttribute("MaxUlMcs",
+                          "Maximum MCS index for UL; -1 disables the limit",
+                          IntegerValue(-1),
+                          MakeIntegerAccessor(&NrMacSchedulerNs3::SetMaxUlMcs,
+                                              &NrMacSchedulerNs3::GetMaxUlMcs),
                           MakeIntegerChecker<int8_t>(-1, 30))
             .AddAttribute("EnableHarqReTx",
                           "If true, it would set the max HARQ ReTx to 3; otherwise it set it to 0",
@@ -352,6 +372,24 @@ NrMacSchedulerNs3::GetMaxDlMcs() const
 }
 
 void
+NrMacSchedulerNs3::SetMaxUlMcs(int8_t v)
+{
+    NS_LOG_FUNCTION(this << static_cast<int32_t>(v));
+    m_maxUlMcs = v;
+    for (auto& ue : m_ueMap)
+    {
+        ue.second->m_ulMcs = GetCappedUlMcs(ue.second->m_ulMcs);
+    }
+}
+
+int8_t
+NrMacSchedulerNs3::GetMaxUlMcs() const
+{
+    NS_LOG_FUNCTION(this);
+    return m_maxUlMcs;
+}
+
+void
 NrMacSchedulerNs3::SetRachUlGrantMcs(uint8_t v)
 {
     m_rachUlGrantMcs = v;
@@ -384,21 +422,47 @@ NrMacSchedulerNs3::GetStartMcsUl() const
 }
 
 uint8_t
+NrMacSchedulerNs3::GetCappedUlMcs(uint8_t ulMcs) const
+{
+    if (m_maxUlMcs < 0)
+    {
+        return ulMcs;
+    }
+    return std::min(ulMcs, static_cast<uint8_t>(m_maxUlMcs));
+}
+
+uint8_t
 NrMacSchedulerNs3::GetEffectiveUlMcs(uint16_t rnti, uint8_t ulMcs) const
 {
     NS_LOG_FUNCTION(this << rnti << static_cast<uint32_t>(ulMcs));
-    if (m_enableBootstrapMcsLimit && m_srBootstrapUesThisTti.find(rnti) != m_srBootstrapUesThisTti.end())
+    uint8_t effectiveMcs = GetCappedUlMcs(ulMcs);
+    if (m_enableBootstrapMcsLimit &&
+        m_srBootstrapUesPending.find(rnti) != m_srBootstrapUesPending.end())
     {
-        const uint8_t effectiveMcs = std::min<uint8_t>(ulMcs, m_bootstrapMcsLimitUl);
-        if (effectiveMcs != ulMcs)
+        const uint8_t bootstrapMcs = std::min(effectiveMcs, m_bootstrapMcsLimitUl);
+        if (bootstrapMcs != effectiveMcs)
         {
             NS_LOG_INFO("Applying bootstrap UL MCS cap for UE "
-                        << rnti << ": estimated MCS " << static_cast<uint32_t>(ulMcs)
-                        << " -> " << static_cast<uint32_t>(effectiveMcs));
+                        << rnti << ": MCS " << static_cast<uint32_t>(effectiveMcs)
+                        << " -> " << static_cast<uint32_t>(bootstrapMcs));
         }
-        return effectiveMcs;
+        effectiveMcs = bootstrapMcs;
     }
-    return ulMcs;
+    return effectiveMcs;
+}
+
+bool
+NrMacSchedulerNs3::IsUlBootstrapPending(uint16_t rnti) const
+{
+    return m_srBootstrapUesPending.find(rnti) != m_srBootstrapUesPending.end();
+}
+
+uint32_t
+NrMacSchedulerNs3::GetUlBootstrapGrantRbgCount() const
+{
+    constexpr uint32_t bootstrapGrantPrbs = 5;
+    const uint32_t rbPerRbg = GetNumRbPerRbg();
+    return (bootstrapGrantPrbs + rbPerRbg - 1) / rbPerRbg;
 }
 
 void
@@ -625,7 +689,7 @@ NrMacSchedulerNs3::DoCschedUeConfigReq(
             static_cast<uint8_t>(m_macSchedSapUser->GetNumHarqProcess()));
         UeInfoOf(*itUe)->m_dlMcs = m_startMcsDl;
         UeInfoOf(*itUe)->m_startMcsDlUe = m_startMcsDl;
-        UeInfoOf(*itUe)->m_ulMcs = m_startMcsUl;
+        UeInfoOf(*itUe)->m_ulMcs = GetCappedUlMcs(m_startMcsUl);
         UeInfoOf(*itUe)->m_dlAmc = m_dlAmc;
         UeInfoOf(*itUe)->m_ulAmc = m_ulAmc;
         UeInfoOf(*itUe)->m_mcsCsiSource = m_mcsCsiSource;
@@ -673,6 +737,7 @@ NrMacSchedulerNs3::DoCschedUeReleaseReq(
     NS_ABORT_IF(itUe == m_ueMap.end());
 
     m_schedulerSrs->RemoveUe(itUe->second->m_srsOffset);
+    m_srBootstrapUesPending.erase(params.m_rnti);
     m_ueMap.erase(itUe);
 
     // When it will be the case of reducing the periodicity? Question for the
@@ -1025,6 +1090,7 @@ NrMacSchedulerNs3::DoSchedUlCqiInfoReq(
                                                 allocation.m_rbgMask,
                                                 m_macSchedSapUser->GetNumRbPerRbg(),
                                                 m_macSchedSapUser->GetSpectrumModel());
+                UeInfoOf(*itUe)->m_ulMcs = GetCappedUlMcs(UeInfoOf(*itUe)->m_ulMcs);
                 found = true;
                 it = ulAllocations.erase(it);
             }
@@ -1708,6 +1774,7 @@ NrMacSchedulerNs3::DoScheduleUlData(PointInFTPlane* spoint,
                 continue;
             }
 
+            m_srBootstrapUesPending.erase(ue.first->m_rnti);
             assigned = true;
 
             if (symbStartDci.insert(dci->m_symStart).second)
@@ -1780,24 +1847,43 @@ NrMacSchedulerNs3::DoScheduleUlData(PointInFTPlane* spoint,
  * @param spoint Starting point for allocation
  * @param rntiList list of RNTI which asked for a SR
  *
- * Each time an UE asks for SR, the scheduler will assign a fixed amount of
- * data (12 bytes) to the UE's UL LCG. Then, the routine for scheduling the data
- * will take care to create an assignation for the UE, to be able to send
- * some data and, eventually, a BSR.
+ * When an UE asks for SR and the scheduler has no buffered-byte estimate for it,
+ * assign 12 bytes to its UL LCGs so that the first grant can carry data and a BSR.
+ * An SR from an UE with a positive estimate is a recovery request and must not
+ * overwrite that estimate.
  *
  */
 void
-NrMacSchedulerNs3::DoScheduleUlSr(PointInFTPlane* spoint, const std::list<uint16_t>& rntiList) const
+NrMacSchedulerNs3::DoScheduleUlSr(PointInFTPlane* spoint, const std::list<uint16_t>& rntiList)
 {
     NS_LOG_FUNCTION(this);
     NS_ASSERT(spoint->m_rbg == 0);
 
     for (const auto& v : rntiList)
     {
-        for (auto& ulLcg : NrMacSchedulerUeInfo::GetUlLCG(m_ueMap.at(v)))
+        auto& ulLcgs = NrMacSchedulerUeInfo::GetUlLCG(m_ueMap.at(v));
+        const bool bootstrapAlreadyPending =
+            m_srBootstrapUesPending.find(v) != m_srBootstrapUesPending.end();
+        const bool hasKnownData =
+            std::any_of(ulLcgs.begin(), ulLcgs.end(), [](const auto& ulLcg) {
+                return ulLcg.second->GetTotalSize() > 0;
+            });
+
+        if (hasKnownData && !bootstrapAlreadyPending)
         {
-            NS_LOG_DEBUG("Assigning 12 bytes to UE " << v << " because of a SR");
-            ulLcg.second->UpdateInfo(12);
+            NS_LOG_DEBUG("Preserving positive UL buffer estimate for UE " << v
+                                                                          << " after recovery SR");
+            continue;
+        }
+
+        m_srBootstrapUesPending.insert(v);
+        if (!hasKnownData)
+        {
+            for (auto& ulLcg : ulLcgs)
+            {
+                NS_LOG_DEBUG("Assigning 12 bootstrap bytes to UE " << v << " because of a SR");
+                ulLcg.second->UpdateInfo(12);
+            }
         }
     }
 }
@@ -1894,6 +1980,7 @@ NrMacSchedulerNs3::ScheduleDl(const NrMacSchedSapProvider::SchedDlTriggerReqPara
                  activeDlHarq,
                  &activeDlUe,
                  params.m_snfSf,
+                 params.m_slotType,
                  ulAllocations,
                  &dlSlot.m_slotAllocInfo);
 
@@ -2051,14 +2138,16 @@ NrMacSchedulerNs3::DoScheduleUl(const std::vector<UlHarqInfo>& ulHarqFeedback,
                                 LteNrTddSlotType type)
 {
     NS_LOG_FUNCTION(this);
-    m_srBootstrapUesThisTti.clear();
-
     NS_ASSERT(allocInfo->m_varTtiAllocInfo.size() == 1); // Just the UL CTRL
 
     uint8_t dataSymPerSlot = m_macSchedSapUser->GetSymbolsPerSlot() - m_ulCtrlSymbols;
     if (type == LteNrTddSlotType::F)
     { // if it's a type F, we have to consider DL CTRL symbols, otherwise, don't
         dataSymPerSlot -= m_dlCtrlSymbols;
+        if (m_fSlotUlAllocationSymbols > 0)
+        {
+            dataSymPerSlot = std::min(dataSymPerSlot, m_fSlotUlAllocationSymbols);
+        }
     }
 
     ActiveHarqMap activeUlHarq;
@@ -2119,7 +2208,6 @@ NrMacSchedulerNs3::DoScheduleUl(const std::vector<UlHarqInfo>& ulHarqFeedback,
 
     if (ulSymAvail > 0 && !m_srList.empty())
     {
-        m_srBootstrapUesThisTti.insert(m_srList.begin(), m_srList.end());
         DoScheduleUlSr(&ulAssignationStartPoint, m_srList);
         m_srList.clear();
     }
@@ -2223,8 +2311,6 @@ NrMacSchedulerNs3::DoScheduleUl(const std::vector<UlHarqInfo>& ulHarqFeedback,
                                 << allocations.size() << " data allocations, with a total of "
                                 << allocInfo->m_varTtiAllocInfo.size());
     NS_ASSERT(m_ulAllocationMap.at(ulSfn.GetEncoding()).m_totUlSym == totUlSym);
-    m_srBootstrapUesThisTti.clear();
-
     return dataSymPerSlot - ulSymAvail;
 }
 
@@ -2397,6 +2483,7 @@ NrMacSchedulerNs3::DoScheduleDl(const std::vector<DlHarqInfo>& dlHarqFeedback,
                                 const ActiveHarqMap& activeDlHarq,
                                 ActiveUeMap* activeDlUe,
                                 const SfnSf& dlSfnSf,
+                                LteNrTddSlotType type,
                                 const SlotElem& ulAllocations,
                                 SlotAllocInfo* allocInfo)
 {
@@ -2406,6 +2493,11 @@ NrMacSchedulerNs3::DoScheduleDl(const std::vector<DlHarqInfo>& dlHarqFeedback,
     uint8_t dataSymPerSlot = m_macSchedSapUser->GetSymbolsPerSlot() - m_dlCtrlSymbols;
 
     uint8_t dlSymAvail = dataSymPerSlot - ulAllocations.m_totUlSym;
+    if (type == LteNrTddSlotType::F && m_fSlotDlAllocationSymbols > 0)
+    {
+        dlSymAvail = std::min(dlSymAvail, m_fSlotDlAllocationSymbols);
+    }
+    const uint8_t initialDlSymAvail = dlSymAvail;
     PointInFTPlane dlAssignationStartPoint(0, m_dlCtrlSymbols);
 
     NS_LOG_DEBUG("Scheduling DL for slot "
@@ -2475,7 +2567,7 @@ NrMacSchedulerNs3::DoScheduleDl(const std::vector<DlHarqInfo>& dlHarqFeedback,
         dlSymAvail -= usedDl;
     }
 
-    return (dataSymPerSlot - ulAllocations.m_totUlSym) - dlSymAvail;
+    return initialDlSymAvail - dlSymAvail;
 }
 
 /**

@@ -106,6 +106,8 @@ class NrSchedGeneralTestCase : public TestCase
     void TestSchedNewDlData(const Ptr<NrMacSchedulerNs3>& sched);
     void TestSchedNewUlData(const Ptr<NrMacSchedulerNs3>& sched);
     void TestSchedNewDlUlData(const Ptr<NrMacSchedulerNs3>& sched);
+    void TestUlMcsLimit(const Ptr<NrMacSchedulerNs3>& sched);
+    void TestSrBootstrapClassification(const Ptr<NrMacSchedulerNs3>& sched);
 
   protected:
     void AddOneUser(uint16_t rnti, const Ptr<NrMacSchedulerNs3>& sched);
@@ -257,6 +259,15 @@ NrSchedGeneralTestCase::LcConfigFor(uint16_t rnti,
 {
     NrMacCschedSapProvider::CschedLcConfigReqParameters params;
     nr::LogicalChannelConfigListElement_s lc;
+    lc.m_logicalChannelIdentity = 1;
+    lc.m_logicalChannelGroup = 0;
+    lc.m_direction = nr::LogicalChannelConfigListElement_s::DIR_BOTH;
+    lc.m_qosBearerType = nr::LogicalChannelConfigListElement_s::QBT_GBR;
+    lc.m_qci = 1;
+    lc.m_eRabMaximulBitrateUl = 0;
+    lc.m_eRabMaximulBitrateDl = 0;
+    lc.m_eRabGuaranteedBitrateUl = 0;
+    lc.m_eRabGuaranteedBitrateDl = 0;
     params.m_rnti = rnti;
     params.m_reconfigureFlag = false;
     params.m_logicalChannelConfigList.emplace_back(lc);
@@ -282,6 +293,105 @@ NrSchedGeneralTestCase::TestSchedNewDlUlData(const Ptr<NrMacSchedulerNs3>& sched
 }
 
 void
+NrSchedGeneralTestCase::TestUlMcsLimit(const Ptr<NrMacSchedulerNs3>& sched)
+{
+    constexpr uint16_t rnti = 99;
+    NS_TEST_ASSERT_MSG_EQ(sched->GetMaxUlMcs(), -1, "UL MCS limit should default to disabled");
+    NS_TEST_ASSERT_MSG_EQ(sched->GetEffectiveUlMcs(rnti, 20),
+                          20,
+                          "Disabled UL MCS limit changed the estimated MCS");
+
+    sched->SetMaxUlMcs(15);
+    NS_TEST_ASSERT_MSG_EQ(sched->GetMaxUlMcs(), 15, "UL MCS limit was not stored");
+    NS_TEST_ASSERT_MSG_EQ(sched->GetEffectiveUlMcs(rnti, 20),
+                          15,
+                          "UL MCS was not capped at the configured maximum");
+    NS_TEST_ASSERT_MSG_EQ(sched->GetEffectiveUlMcs(rnti, 10),
+                          10,
+                          "UL MCS below the configured maximum was changed");
+
+    sched->SetStartMcsUl(20);
+    AddOneUser(rnti, sched);
+    NS_TEST_ASSERT_MSG_EQ(sched->m_ueMap.at(rnti)->m_ulMcs,
+                          15,
+                          "A newly registered UE stored an uncapped UL MCS");
+
+    sched->SetMaxUlMcs(12);
+    NS_TEST_ASSERT_MSG_EQ(sched->m_ueMap.at(rnti)->m_ulMcs,
+                          12,
+                          "Changing the UL MCS limit did not cap existing UE state");
+
+    sched->m_ueMap.at(rnti)->m_ulMcs = 20;
+    sched->m_ueMap.at(rnti)->m_ulCqi.m_timer = 0;
+    sched->m_cqiManagement.RefreshUlCqiMaps(sched->m_ueMap);
+    NS_TEST_ASSERT_MSG_EQ(sched->m_ueMap.at(rnti)->m_ulMcs,
+                          12,
+                          "UL CQI expiry restored an uncapped starting MCS");
+
+    NrMacCschedSapProvider::CschedUeReleaseReqParameters releaseParams;
+    releaseParams.m_rnti = rnti;
+    sched->DoCschedUeReleaseReq(releaseParams);
+    sched->SetStartMcsUl(0);
+    sched->SetMaxUlMcs(-1);
+}
+
+void
+NrSchedGeneralTestCase::TestSrBootstrapClassification(const Ptr<NrMacSchedulerNs3>& sched)
+{
+    constexpr uint16_t rnti = 100;
+    AddOneUser(rnti, sched);
+    LcConfigFor(rnti, 0, sched);
+
+    auto& ulLcgs = sched->m_ueMap.at(rnti)->m_ulLCG;
+    NS_TEST_ASSERT_MSG_EQ(ulLcgs.size(), 1, "Expected one configured UL LCG");
+    auto& lcg = ulLcgs.begin()->second;
+
+    NrMacSchedulerNs3::PointInFTPlane spoint(0, 0);
+    const std::list<uint16_t> srList{rnti};
+    sched->m_enableBootstrapMcsLimit = true;
+
+    lcg->UpdateInfo(4096);
+    sched->DoScheduleUlSr(&spoint, srList);
+    NS_TEST_ASSERT_MSG_EQ(lcg->GetTotalSize(),
+                          4096,
+                          "A recovery SR overwrote a positive UL buffer estimate");
+    NS_TEST_ASSERT_MSG_EQ(sched->m_srBootstrapUesPending.count(rnti),
+                          0,
+                          "A recovery SR was incorrectly classified as bootstrap");
+    NS_TEST_ASSERT_MSG_EQ(sched->GetEffectiveUlMcs(rnti, 20),
+                          20,
+                          "A recovery SR incorrectly enabled the bootstrap MCS cap");
+
+    lcg->UpdateInfo(0);
+    sched->DoScheduleUlSr(&spoint, srList);
+    NS_TEST_ASSERT_MSG_EQ(lcg->GetTotalSize(), 12, "A bootstrap SR did not seed the UL estimate");
+    NS_TEST_ASSERT_MSG_EQ(sched->m_srBootstrapUesPending.count(rnti),
+                          1,
+                          "A zero-estimate SR was not classified as bootstrap");
+    NS_TEST_ASSERT_MSG_EQ(sched->GetEffectiveUlMcs(rnti, 20),
+                          9,
+                          "A bootstrap SR did not apply the configured MCS cap");
+    NS_TEST_ASSERT_MSG_EQ(sched->GetUlBootstrapGrantRbgCount(),
+                          5,
+                          "A one-PRB RBG configuration did not produce a five-PRB bootstrap grant");
+
+    sched->DoScheduleUlSr(&spoint, srList);
+    NS_TEST_ASSERT_MSG_EQ(lcg->GetTotalSize(),
+                          12,
+                          "A repeated bootstrap SR changed the synthetic estimate");
+    NS_TEST_ASSERT_MSG_EQ(sched->m_srBootstrapUesPending.count(rnti),
+                          1,
+                          "Bootstrap state did not remain pending until a grant");
+
+    NrMacCschedSapProvider::CschedUeReleaseReqParameters releaseParams;
+    releaseParams.m_rnti = rnti;
+    sched->DoCschedUeReleaseReq(releaseParams);
+    NS_TEST_ASSERT_MSG_EQ(sched->m_srBootstrapUesPending.count(rnti),
+                          0,
+                          "UE release left stale bootstrap state");
+}
+
+void
 NrSchedGeneralTestCase::DoRun()
 {
     m_cSchedSapUser = new TestCschedSapUser();
@@ -294,6 +404,8 @@ NrSchedGeneralTestCase::DoRun()
 
     TestSAPInterface(sched);
     TestAddingRemovingUsersNoData(sched);
+    TestUlMcsLimit(sched);
+    TestSrBootstrapClassification(sched);
     TestSchedNewData(sched);
 
     delete m_cSchedSapUser;

@@ -40,6 +40,7 @@ namespace ns3 {
     X(uePhyCtrlTxStream)                     \
     X(ueMacStateStream)                      \
     X(ueMacRaTimeoutStream)                  \
+    X(uePuschTxPowerStream)                  \
     X(dlMacStatsStream)                      \
     X(ulMacStatsStream)                      \
     X(srsSinrStream)

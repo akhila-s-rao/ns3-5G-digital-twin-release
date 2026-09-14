@@ -17,6 +17,7 @@
 #include "ns3/boolean.h"
 #include "ns3/pointer.h"
 #include "ns3/uniform-planar-array.h"
+#include "ns3/uinteger.h"
 
 #include <algorithm>
 
@@ -150,13 +151,20 @@ NrMemberPhySapProvider::GetRbNum() const
 TypeId
 NrPhy::GetTypeId()
 {
-    static TypeId tid = TypeId("ns3::NrPhy")
-                            .SetParent<Object>()
-                            .AddAttribute("NrSpectrumPhy",
-                                          "NrSpectrumPhy instance",
-                                          PointerValue(),
-                                          MakePointerAccessor(&NrPhy::m_spectrumPhy),
-                                          MakePointerChecker<NrSpectrumPhy>());
+    static TypeId tid =
+        TypeId("ns3::NrPhy")
+            .SetParent<Object>()
+            .AddAttribute("NrSpectrumPhy",
+                          "NrSpectrumPhy instance",
+                          PointerValue(),
+                          MakePointerAccessor(&NrPhy::m_spectrumPhy),
+                          MakePointerChecker<NrSpectrumPhy>())
+            .AddAttribute("L1L2CtrlLatency",
+                          "L1-to-L2 control-message latency in slots",
+                          UintegerValue(2),
+                          MakeUintegerAccessor(&NrPhy::SetL1L2CtrlLatency,
+                                               &NrPhy::GetL1L2CtrlLatency),
+                          MakeUintegerChecker<uint32_t>());
 
     return tid;
 }
@@ -662,7 +670,13 @@ NrPhy::GetCellId() const
 uint32_t
 NrPhy::GetL1L2CtrlLatency() const
 {
-    return 2;
+    return m_l1L2CtrlLatency;
+}
+
+void
+NrPhy::SetL1L2CtrlLatency(uint32_t latency)
+{
+    m_l1L2CtrlLatency = latency;
 }
 
 Ptr<NrSpectrumPhy>

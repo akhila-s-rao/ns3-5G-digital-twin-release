@@ -171,6 +171,12 @@ class NrGnbPhy : public NrPhy
     void SetN2Delay(uint32_t delay);
 
     /**
+     * @brief Set how many slots before DCI transmission the gNB scheduler runs.
+     * @param slots scheduler lookahead in slots
+     */
+    void SetUlSchedulerLookaheadSlots(uint32_t slots);
+
+    /**
      * \brief: Get the minimum processing delay (in slots)
      * to decode DL DCI and decode DL Data
      */
@@ -187,6 +193,11 @@ class NrGnbPhy : public NrPhy
      * to decode UL DCI and prepare UL data
      */
     uint32_t GetN2Delay() const;
+
+    /**
+     * @brief Get the gNB scheduler lookahead in slots.
+     */
+    uint32_t GetUlSchedulerLookaheadSlots() const;
 
     /**
      * @brief Get the BeamId for the selected user
@@ -712,7 +723,8 @@ class NrGnbPhy : public NrPhy
      * @param n0 N0 parameter
      * @param n2 N2 parameter
      * @param n1 N1 parameter
-     * @param l1l2CtrlLatency L1L2CtrlLatency of the system
+     * @param dlSchedulerLookaheadSlots slots between DL scheduling and DCI transmission
+     * @param ulSchedulerLookaheadSlots slots between UL scheduling and DCI transmission
      */
     static void GenerateStructuresFromPattern(const std::vector<LteNrTddSlotType>& pattern,
                                               std::map<uint32_t, std::vector<uint32_t>>* toSendDl,
@@ -723,7 +735,8 @@ class NrGnbPhy : public NrPhy
                                               uint32_t n0,
                                               uint32_t n2,
                                               uint32_t n1,
-                                              uint32_t l1l2CtrlLatency);
+                                              uint32_t dlSchedulerLookaheadSlots,
+                                              uint32_t ulSchedulerLookaheadSlots);
 
     /**
      * @brief Call MAC for retrieve the slot indication. Currently calls UL and DL.
@@ -914,6 +927,7 @@ class NrGnbPhy : public NrPhy
     //!< earliest possible start of the corresponding ACK/NACK transmission (UE side)
     uint32_t m_n2Delay{0}; //!< minimum processing delay (in slots) needed to decode UL DCI and
                            //!< prepare UL data (UE side)
+    uint32_t m_ulSchedulerLookaheadSlots{2}; //!< slots between UL scheduling and DCI transmission
 
     SfnSf m_currentSlot;     //!< The current slot number
     bool m_isPrimary{false}; //!< Is this PHY a primary phy?

@@ -25,80 +25,31 @@ COMMON_ARGS = {
     "randomSeed": 3,
 }
 
-# Runs for expeca delay component distribution comparison 
-# RUNS = [
-#     # vary pkt size
-#     {"name": "benchmark01", "args": {"delayPacketSize": 20, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark02", "args": {"delayPacketSize": 50, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark03", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark04", "args": {"delayPacketSize": 200, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark05", "args": {"delayPacketSize": 500, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark06", "args": {"delayPacketSize": 1000, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark07", "args": {"delayPacketSize": 1500, "delayInterval": "50ms", "randomSeed": 3}},
-#     {"name": "benchmark08", "args": {"delayPacketSize": 2000, "delayInterval": "50ms", "randomSeed": 3}},
-#     # vary sending rate
-#     {"name": "benchmark09", "args": {"delayPacketSize": 100, "delayInterval": "10ms", "randomSeed": 3}},
-#     {"name": "benchmark10", "args": {"delayPacketSize": 100, "delayInterval": "15ms", "randomSeed": 3}},
-#     {"name": "benchmark11", "args": {"delayPacketSize": 100, "delayInterval": "20ms", "randomSeed": 3}},
-#     {"name": "benchmark12", "args": {"delayPacketSize": 100, "delayInterval": "25ms", "randomSeed": 3}},
-#     {"name": "benchmark13", "args": {"delayPacketSize": 100, "delayInterval": "100ms", "randomSeed": 3}},
-#     # with background load
-#     {"name": "benchmark14", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 0.0001}},
-#     {"name": "benchmark15", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 2.5}},
-#     {"name": "benchmark16", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 5}},
-#     {"name": "benchmark17", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 7.5}},
-#     {"name": "benchmark18", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 10}},
-# ]
-
-
-
-# Runs for benchmarking
-# Runs with no load
+# Runs for expeca delay component distribution comparison as well as for benchmarking between testbeds and simulation
 RUNS = [
-    # Vary packet payload size, with fixed inter packet time range (50 B to 1400 B)
-    # 50 B payload + headers is within a VOIP packet size range and fits into the first 1 PRB allocation by the Gnb for the UL BSR. This means we do not see ant RLC segmentation
-    # 1400 B payload represents typical IP packets that wont get fragmented with a 1500 MTU at the IP layer.   
-    {"name": "benchmark01", "args": {"delayPacketSize": 50, "delayInterval": "50ms"}},
-    {"name": "benchmark02", "args": {"delayPacketSize": 100, "delayInterval": "50ms"}},
-    {"name": "benchmark03", "args": {"delayPacketSize": 500, "delayInterval": "50ms"}},
-    {"name": "benchmark04", "args": {"delayPacketSize": 1000, "delayInterval": "50ms"}},
-    {"name": "benchmark05", "args": {"delayPacketSize": 1400, "delayInterval": "50ms"}},
-    # Vary inter packet time, with fixed packet payload size range (20 ms to 100 ms)
-    {"name": "benchmark06", "args": {"delayPacketSize": 1400, "delayInterval": "20ms"}},
-    {"name": "benchmark07", "args": {"delayPacketSize": 1400, "delayInterval": "25ms"}},
-    {"name": "benchmark08", "args": {"delayPacketSize": 1400, "delayInterval": "75ms"}},
-    {"name": "benchmark09", "args": {"delayPacketSize": 1400, "delayInterval": "100ms"}},
-
-    # Runs with UDP load
-    #25 % UDP load
-
-    {"name": "benchmark10", "args": {"delayPacketSize": 50, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 10}},
-    {"name": "benchmark11", "args": {"delayPacketSize": 1400, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 10}},
-    # Vary inter packet time, with fixed packet payload size range (20 ms to 100 ms)
-    {"name": "benchmark12", "args": {"delayPacketSize": 1400, "delayInterval": "20ms", "loadType": "udp", "cbrLoad": 10}},
-    {"name": "benchmark13", "args": {"delayPacketSize": 1400, "delayInterval": "100ms", "loadType": "udp", "cbrLoad": 10}},
-    
-    #50 % UDP load
-    {"name": "benchmark14", "args": {"delayPacketSize": 50, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 20}},
-    {"name": "benchmark15", "args": {"delayPacketSize": 1400, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 20}},
-    # Vary inter packet time, with fixed packet payload size range (20 ms to 100 ms)
-    {"name": "benchmark16", "args": {"delayPacketSize": 1400, "delayInterval": "20ms", "loadType": "udp", "cbrLoad": 20}},
-    {"name": "benchmark17", "args": {"delayPacketSize": 1400, "delayInterval": "100ms", "loadType": "udp", "cbrLoad": 20}},
-
-    #75 % UDP load
-    {"name": "benchmark18", "args": {"delayPacketSize": 50, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 30}},
-    {"name": "benchmark19", "args": {"delayPacketSize": 1400, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 30}},
-    # Vary inter packet time, with fixed packet payload size range (20 ms to 100 ms)
-    {"name": "benchmark20", "args": {"delayPacketSize": 1400, "delayInterval": "20ms", "loadType": "udp", "cbrLoad": 30}},
-    {"name": "benchmark21", "args": {"delayPacketSize": 1400, "delayInterval": "100ms", "loadType": "udp", "cbrLoad": 30}},
-
-    #Runs with TCP load
-    {"name": "benchmark22", "args": {"delayPacketSize": 50, "delayInterval": "50ms", "loadType": "tcp"}},
-    {"name": "benchmark23", "args": {"delayPacketSize": 1400, "delayInterval": "50ms", "loadType": "tcp"}},
-    # Vary inter packet time, with fixed packet payload size range (20 ms to 100 ms)
-    {"name": "benchmark24", "args": {"delayPacketSize": 1400, "delayInterval": "20ms", "loadType": "tcp"}},
-    {"name": "benchmark25", "args": {"delayPacketSize": 1400, "delayInterval": "100ms", "loadType": "tcp"}},
-]
+     # vary pkt size
+     {"name": "a1", "args": {"delayPacketSize": 50, "delayInterval": "50ms"}},
+     {"name": "a2", "args": {"delayPacketSize": 100, "delayInterval": "50ms"}},
+     {"name": "a3", "args": {"delayPacketSize": 200, "delayInterval": "50ms"}},
+     {"name": "a4", "args": {"delayPacketSize": 1000, "delayInterval": "50ms"}},
+     {"name": "a5", "args": {"delayPacketSize": 1200, "delayInterval": "50ms"}},
+     {"name": "a6", "args": {"delayPacketSize": 1400, "delayInterval": "50ms"}},
+     {"name": "a7", "args": {"delayPacketSize": 12, "delayInterval": "50ms"}},
+     # vary sending rate
+     {"name": "e1", "args": {"delayPacketSize": 100, "delayInterval": "10ms"}},
+     {"name": "e2", "args": {"delayPacketSize": 100, "delayInterval": "15ms"}},
+     {"name": "e3", "args": {"delayPacketSize": 100, "delayInterval": "20ms"}},
+     {"name": "e4", "args": {"delayPacketSize": 100, "delayInterval": "25ms"}},
+     {"name": "e5", "args": {"delayPacketSize": 100, "delayInterval": "50ms"}},
+     {"name": "e6", "args": {"delayPacketSize": 100, "delayInterval": "75ms"}},
+     {"name": "e7", "args": {"delayPacketSize": 100, "delayInterval": "100ms"}},
+     # vary background load
+     {"name": "c1", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 2.5}},
+     {"name": "c2", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 5}},
+     {"name": "c3", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 7.5}},
+     {"name": "c4", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 10}},
+     {"name": "c5", "args": {"delayPacketSize": 100, "delayInterval": "50ms", "loadType": "udp", "cbrLoad": 15}},
+ ]
 
 
 def format_args(args):

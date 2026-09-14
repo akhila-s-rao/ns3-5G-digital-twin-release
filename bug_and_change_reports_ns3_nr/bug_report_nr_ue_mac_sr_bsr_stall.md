@@ -1,5 +1,11 @@
 # Bug Report: NR UE SR/BSR State Machine Can Stall With Pending UL Data
 
+> **Superseded implementation:** This report documents the original starvation bug and the
+> first fix. That fix later caused periodic recovery SRs to be treated as zero-estimate
+> bootstrap requests. The `expBsrTimer`-driven SR mechanism described below has been removed
+> and replaced by a UE-MAC `RetxBsrTimer`. See
+> `bug_report_periodic_bsr_sr_bootstrap_regression.md` for the current implementation.
+
 ## Summary
 In long NR simulations, some UEs stop receiving UL data grants while they still have UL data queued. The UE continues sending SRS, but SR/BSR signaling stops and the gNB observes BSR = 0. This results in a permanent UL scheduling stall for those UEs even though RLC HOL indicates a large backlog.
 

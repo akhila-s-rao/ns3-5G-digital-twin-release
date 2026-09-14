@@ -1,5 +1,10 @@
 # Bug Report: NR RLC UM/AM Periodic BSR Timer Can Be Indefinitely Postponed
 
+> **Superseded implementation:** This report documents an intermediate fix. Periodic RLC
+> buffer-status reporting remains, but the `expBsrTimer` flag no longer commands UE MAC to
+> send an SR. Grant-starvation recovery is now owned by UE MAC's `RetxBsrTimer`. See
+> `bug_report_periodic_bsr_sr_bootstrap_regression.md` for the current implementation.
+
 ## Summary
 In `NrRlcUm` and `NrRlcAm`, periodic BSR timer handling could repeatedly restart the timer while data remained buffered. Under sustained arrivals, this can postpone timer expiry for a long time, delaying periodic `expBsrTimer` signaling and making UL grant recovery fragile.
 

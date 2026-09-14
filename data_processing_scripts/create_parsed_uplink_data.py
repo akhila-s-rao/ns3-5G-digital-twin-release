@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import os
+from concurrent.futures import ProcessPoolExecutor
+from itertools import repeat
 from pathlib import Path
+from time import perf_counter
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
@@ -19,6 +23,7 @@ COMMON_CONTEXT: List[str] = [
 GNB_BSR_CONTEXT: List[str] = COMMON_CONTEXT + ["lcg"]
 
 DRB_LCID_MIN = 3  # SRB0/1/2 are reserved; DRB/data LCIDs start at 3.
+DEFAULT_JOBS = min(4, os.cpu_count() or 1)
 
 LOG_CONFIG: Dict[str, Dict[str, object]] = {
     "GnbBsrTrace.txt": {
@@ -432,6 +437,7 @@ def parse_run(
 
 
 def main() -> int:
+    start_time = perf_counter()
     parser = argparse.ArgumentParser(
         description="Load run folder logs into pandas DataFrames."
     )
@@ -469,7 +475,15 @@ def main() -> int:
         required=True,
         help="Simulation duration in seconds for aligned resampling.",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=DEFAULT_JOBS,
+        help=f"Maximum parallel run workers (default: {DEFAULT_JOBS}).",
+    )
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error("--jobs must be at least 1")
 
     run_dir = Path(args.run_dir).resolve()
     output_dir = Path(args.output_dir).resolve()
@@ -478,9 +492,24 @@ def main() -> int:
     run_dirs = find_run_dirs(run_dir, filenames)
     if not run_dirs:
         raise FileNotFoundError(f"No run directories found under {run_dir}")
-    for rdir in run_dirs:
-        parse_run(rdir, output_dir, args, filenames)
+    workers = min(args.jobs, len(run_dirs))
+    print(f"Processing {len(run_dirs)} run(s) with {workers} worker(s)")
+    if workers == 1:
+        for rdir in run_dirs:
+            parse_run(rdir, output_dir, args, filenames)
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            list(
+                executor.map(
+                    parse_run,
+                    run_dirs,
+                    repeat(output_dir),
+                    repeat(args),
+                    repeat(filenames),
+                )
+            )
 
+    print(f"Total runtime: {perf_counter() - start_time:.2f} seconds")
     return 0
 
 

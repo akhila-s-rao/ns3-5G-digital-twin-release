@@ -60,6 +60,8 @@ __pycache__/
 
 # Generated simulator outputs and local analysis artifacts
 sim_campaign_logs/
+datasets/
+results/
 contrib/nr/examples/5G-LENA-digital-twin-script/sim_campaign_logs/
 contrib/nr/examples/5G-LENA-digital-twin-script/plots/
 contrib/nr/examples/5G-LENA-digital-twin-script/rem_plots/

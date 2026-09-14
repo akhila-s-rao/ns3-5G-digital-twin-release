@@ -19,7 +19,7 @@ COMMON_ARGS = {
     "vrFrameRate": 30,
     "vrTargetDataRateMbps": 5,
     "vrAppProfile": "VirusPopper",
-    "appGenerationTime": 1000,
+    "appGenerationTime": 1800,
     "progressInterval": "1s",
     "vrBearerQci": 80,
     "controlBearerQci": 80,
@@ -28,16 +28,23 @@ COMMON_ARGS = {
 }
 
 RUNS = [
-    {"name": "run01", "args": {"numUesWithVrApp": 3}},# default run
-    {"name": "run02", "args": {"numUesWithVrApp": 2}},
-    {"name": "run03", "args": {"numUesWithVrApp": 5}},
-    {"name": "run04", "args": {"numUesWithVrApp": 6}},
-    {"name": "run05", "args": {"channelScenario": "InH-OfficeMixed"}},
-    {"name": "run06", "args": {"channelScenario": "UMi"}},
-    {"name": "run07", "args": {"channelScenario": "UMa"}},
-    {"name": "run08", "args": {"vrAppProfile": "Minecraft"}},
-    {"name": "run09", "args": {"vrAppProfile": "GoogleEarthVrCities"}},
-    {"name": "run10", "args": {"vrAppProfile": "GoogleEarthVrTour"}},
+    {"name": "run01", "args": {"numUesWithVrApp": 3}},# default run # 15 Mbps
+    {"name": "run02", "args": {"numUesWithVrApp": 2}},#10 Mbps
+    {"name": "run03", "args": {"numUesWithVrApp": 5}},#25 Mbps
+    {"name": "run04", "args": {"numUesWithVrApp": 6}},#30Mbps
+    {"name": "run05", "args": {"channelScenario": "InH-OfficeMixed"}},# 15 Mbps
+    {"name": "run06", "args": {"channelScenario": "UMi"}},# 15 Mbps
+    {"name": "run07", "args": {"channelScenario": "UMa"}},# 15 Mbps
+    {"name": "run08", "args": {"vrAppProfile": "Minecraft"}},# 15 Mbps
+    {"name": "run09", "args": {"vrAppProfile": "GoogleEarthVrCities"}},# 15 Mbps
+    {"name": "run10", "args": {"vrAppProfile": "GoogleEarthVrTour"}},# 15 Mbps
+    {"name": "run11", "args": {"numUesWithVrApp": 2, "vrTargetDataRateMbps": 7.5}},
+    {"name": "run12", "args": {"numUesWithVrApp": 4, "vrTargetDataRateMbps": 3.75}},
+    {"name": "run13", "args": {"numUesWithVrApp": 6, "vrTargetDataRateMbps": 2.5}},
+    {"name": "run14", "args": {"numUesWithVrApp": 8, "vrTargetDataRateMbps": 1.875}},
+    {"name": "run15", "args": {"numUesWithVrApp": 3, "vrTargetDataRateMbps": 6.6, "vrFrameRate": 30}},
+    {"name": "run16", "args": {"numUesWithVrApp": 3, "vrTargetDataRateMbps": 6.6, "vrFrameRate": 60}},
+
 ]
 
 

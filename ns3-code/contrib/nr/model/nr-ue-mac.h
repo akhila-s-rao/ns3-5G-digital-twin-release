@@ -9,6 +9,7 @@
 #include "nr-phy-mac-common.h"
 #include "nr-ue-cmac-sap.h"
 
+#include "ns3/nstime.h"
 #include "ns3/traced-callback.h"
 
 #include <unordered_map>
@@ -22,6 +23,7 @@ class NrControlMessage;
 class UniformRandomVariable;
 class PacketBurst;
 class NrUlDciMessage;
+class NrUeMacRetxBsrTestCase;
 
 /**
  * @ingroup ue-mac
@@ -105,6 +107,7 @@ class NrUeMac : public Object
     friend class UeMemberNrUeCmacSapProvider;
     friend class UeMemberNrMacSapProvider;
     friend class MacUeMemberPhySapUser;
+    friend class NrUeMacRetxBsrTestCase;
 
   public:
     /**
@@ -136,9 +139,9 @@ class NrUeMac : public Object
      * the BSR can be sent in the same slot as data. It means that the MAC prepares
      * together the data and the BSR.
      *
-     * If the BSR is not sent (we don't have any data in the queue) and we don't
-     * have any more reserved space to send BSR, then the state goes back to the
-     * INACTIVE state.
+     * A retransmission BSR timer is restarted after an SR or a new-data UL grant.
+     * If it expires while data remains buffered, the UE sends another SR. When
+     * the buffer empties, the timer is stopped and the state returns to INACTIVE.
      */
     enum SrBsrMachine : uint8_t
     {
@@ -322,7 +325,21 @@ class NrUeMac : public Object
     /**
      * @brief Send to the PHY a SR
      */
-    void SendSR() const;
+    void SendSR();
+
+    /**
+     * @brief Return whether this slot is a configured SR opportunity.
+     * @param sfn current MAC slot
+     * @return true when SR transmission is unrestricted or the slot matches the configured grid
+     */
+    bool IsSrOpportunity(const SfnSf& sfn) const;
+
+    /// Restart the timer used to recover when no further new-data UL grant arrives.
+    void RestartRetxBsrTimer();
+    /// Stop the retransmission BSR timer.
+    void StopRetxBsrTimer();
+    /// Request another SR if buffered data remains when the timer expires.
+    void ExpireRetxBsrTimer();
     /**
      * @brief Called by RLC to transmit a RLC PDU
      * @param params the RLC params
@@ -468,6 +485,10 @@ class NrUeMac : public Object
         m_ulBsrReceived; //!< BSR received from RLC (the last one)
 
     SrBsrMachine m_srState{INACTIVE}; //!< Current state for the SR/BSR machine.
+    uint32_t m_srPeriodicitySlots{0}; //!< SR opportunity period; zero disables periodic gating.
+    uint32_t m_srOffsetSlots{0};      //!< SR opportunity offset in normalized MAC slots.
+    Time m_retxBsrTimerValue{MilliSeconds(10)}; //!< Time to wait for another new-data UL grant.
+    EventId m_retxBsrTimer;                     //!< Retransmission BSR timer.
 
     Ptr<UniformRandomVariable> m_raPreambleUniformVariable;
     uint8_t m_raPreambleId{0}; //!< The RA Preamble ID

@@ -64,7 +64,6 @@ NrRlcAm::NrRlcAm()
     m_expectedSeqNumber = 0;
 
     m_pollRetransmitTimerJustExpired = false;
-    m_expBsrTimer = false; // codex added
 }
 
 NrRlcAm::~NrRlcAm()
@@ -193,8 +192,6 @@ NrRlcAm::DoTransmitPdcpPdu(Ptr<Packet> p)
     DoTransmitBufferStatusReport();
     if ((m_txonBufferSize + m_txedBufferSize + m_retxBufferSize > 0) && !m_bsrTimer.IsPending())
     {
-        // codex added: start periodic BSR timer only if it is not already running.
-        // This avoids postponing periodic BSR indefinitely under sustained arrivals.
         m_bsrTimer = Simulator::Schedule(m_bsrTimerValue, &NrRlcAm::ExpireBsrTimer, this);
     }
 }
@@ -211,12 +208,9 @@ NrRlcAm::DoNotifyTxOpportunity(NrMacSapUser::TxOpportunityParameters txOpParams)
         if ((m_txonBufferSize + m_txedBufferSize + m_retxBufferSize > 0) &&
             !m_bsrTimer.IsPending())
         {
-            // codex added: do not cancel/restart an active periodic BSR timer.
-            // Keep one running instance to preserve periodic expiry behavior.
             m_bsrTimer = Simulator::Schedule(m_bsrTimerValue, &NrRlcAm::ExpireBsrTimer, this);
         }
     };
-
     if (txOpParams.bytes < 4)
     {
         // Stingy MAC: In general, we need more bytes.
@@ -309,8 +303,7 @@ NrRlcAm::DoNotifyTxOpportunity(NrMacSapUser::TxOpportunityParameters txOpParams)
         params.componentCarrierId = txOpParams.componentCarrierId;
 
         m_macSapProvider->TransmitPdu(params);
-        startPeriodicBsrIfNeeded(); // codex added
-
+        startPeriodicBsrIfNeeded();
         m_statusPduRequested = false;
         m_statusPduBufferSize = 0;
         m_statusProhibitTimer = Simulator::Schedule(m_statusProhibitTimerValue,
@@ -408,8 +401,7 @@ NrRlcAm::DoNotifyTxOpportunity(NrMacSapUser::TxOpportunityParameters txOpParams)
                     params.componentCarrierId = txOpParams.componentCarrierId;
 
                     m_macSapProvider->TransmitPdu(params);
-                    startPeriodicBsrIfNeeded(); // codex added
-
+                    startPeriodicBsrIfNeeded();
                     m_retxBuffer.at(seqNumberValue).m_retxCount++;
                     m_retxBuffer.at(seqNumberValue).m_waitingSince = Simulator::Now();
                     NS_LOG_INFO("Incr RETX_COUNT for SN = " << seqNumberValue);
@@ -858,7 +850,7 @@ NrRlcAm::DoNotifyTxOpportunity(NrMacSapUser::TxOpportunityParameters txOpParams)
     params.componentCarrierId = txOpParams.componentCarrierId;
 
     m_macSapProvider->TransmitPdu(params);
-    startPeriodicBsrIfNeeded(); // codex added
+    startPeriodicBsrIfNeeded();
 }
 
 void
@@ -1753,7 +1745,6 @@ NrRlcAm::DoTransmitBufferStatusReport()
     r.txQueueHolDelay = txonQueueHolDelay.GetMilliSeconds();
     r.retxQueueSize = m_retxBufferSize + m_txedBufferSize;
     r.retxQueueHolDelay = retxQueueHolDelay.GetMilliSeconds();
-    r.expBsrTimer = m_expBsrTimer; // codex added
 
     if (m_statusPduRequested && !m_statusProhibitTimer.IsPending())
     {
@@ -1778,7 +1769,6 @@ NrRlcAm::DoTransmitBufferStatusReport()
                        r.retxQueueHolDelay,
                        r.statusPduSize);
         m_macSapProvider->BufferStatusReport(r);
-        m_expBsrTimer = false; // codex added
     }
     else
     {
@@ -1885,7 +1875,6 @@ NrRlcAm::ExpireBsrTimer()
 
     if (m_txonBufferSize + m_txedBufferSize + m_retxBufferSize > 0)
     {
-        m_expBsrTimer = true; // codex added
         DoTransmitBufferStatusReport();
         m_bsrTimer = Simulator::Schedule(m_bsrTimerValue, &NrRlcAm::ExpireBsrTimer, this);
     }

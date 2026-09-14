@@ -7,6 +7,10 @@ Metrics are resampled into fixed windows of `--window-ms` milliseconds, default 
 
 The metrics reported are for uplink access and filtered for the DATA radio bearers only. i.e. lcid >= 3.
 
+Runs are processed in parallel when multiple run directories are found. `--jobs` sets the
+maximum number of worker processes and defaults to at most 4; use `--jobs=1` for sequential
+processing.
+
 All columns in the CSV files are described below. 
 
 ## Index Columns (3 columns)

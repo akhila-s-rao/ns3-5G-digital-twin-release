@@ -144,10 +144,18 @@ NrGnbPhy::GetTypeId()
                           MakeUintegerAccessor(&NrGnbPhy::SetN1Delay, &NrGnbPhy::GetN1Delay),
                           MakeUintegerChecker<uint32_t>(0, 4))
             .AddAttribute("N2Delay",
-                          "Minimum processing delay needed to decode UL DCI and prepare UL data",
+                          "Minimum UL DCI-to-PUSCH slot offset needed to decode UL DCI and "
+                          "prepare UL data",
                           UintegerValue(2),
                           MakeUintegerAccessor(&NrGnbPhy::SetN2Delay, &NrGnbPhy::GetN2Delay),
-                          MakeUintegerChecker<uint32_t>(0, 4))
+                          MakeUintegerChecker<uint32_t>(0, 32))
+            .AddAttribute("UlSchedulerLookaheadSlots",
+                          "Number of slots between a gNB UL scheduling decision and UL DCI "
+                          "transmission",
+                          UintegerValue(2),
+                          MakeUintegerAccessor(&NrGnbPhy::SetUlSchedulerLookaheadSlots,
+                                               &NrGnbPhy::GetUlSchedulerLookaheadSlots),
+                          MakeUintegerChecker<uint32_t>(0, 32))
             .AddAttribute("TbDecodeLatency",
                           "Transport block decode latency",
                           TimeValue(MicroSeconds(100)),
@@ -307,13 +315,13 @@ ReturnDciSlot(const std::vector<LteNrTddSlotType>& pattern, uint32_t pos, uint32
 
 /**
  * @brief Generates the map tosendDl/Ul that holds the information of the DCI Slot and the
- * corresponding k0/k2 value, and the generateDl/Ul that includes the L1L2CtrlLatency.
+ * corresponding k0/k2 value, and the generateDl/Ul that includes scheduler lookahead.
  * @param pattern The TDD pattern, the pattern to analyze
  * @param toSend The structure toSendDl/tosendUl to fill
  * @param generate The structure generateDl/generateUl to fill
  * @param pos The position inside the pattern for which we want to check where the DCI should be
  * sent \param n The N parameter (equal to N0 or N2, depending if it is DL or UL) \param
- * l1l2CtrlLatency L1L2CtrlLatency of the system
+ * schedulerLookaheadSlots slots between scheduling and DCI transmission
  */
 static void
 GenerateDciMaps(const std::vector<LteNrTddSlotType>& pattern,
@@ -321,16 +329,16 @@ GenerateDciMaps(const std::vector<LteNrTddSlotType>& pattern,
                 std::map<uint32_t, std::vector<uint32_t>>* generate,
                 uint32_t pos,
                 uint32_t n,
-                uint32_t l1l2CtrlLatency)
+                uint32_t schedulerLookaheadSlots)
 {
     auto dciSlot = ReturnDciSlot(pattern, pos, n);
     uint32_t indexGen =
-        modulo(static_cast<int>(dciSlot.indexDci) - static_cast<int>(l1l2CtrlLatency),
+        modulo(static_cast<int>(dciSlot.indexDci) - static_cast<int>(schedulerLookaheadSlots),
                static_cast<uint32_t>(pattern.size()));
-    uint32_t kWithCtrlLatency = static_cast<uint32_t>(dciSlot.k) + l1l2CtrlLatency;
+    uint32_t kWithLookahead = static_cast<uint32_t>(dciSlot.k) + schedulerLookaheadSlots;
 
     (*toSend)[dciSlot.indexDci].push_back(static_cast<uint32_t>(dciSlot.k));
-    (*generate)[indexGen].push_back(kWithCtrlLatency);
+    (*generate)[indexGen].push_back(kWithLookahead);
 }
 
 void
@@ -343,7 +351,8 @@ NrGnbPhy::GenerateStructuresFromPattern(const std::vector<LteNrTddSlotType>& pat
                                         uint32_t n0,
                                         uint32_t n2,
                                         uint32_t n1,
-                                        uint32_t l1l2CtrlLatency)
+                                        uint32_t dlSchedulerLookaheadSlots,
+                                        uint32_t ulSchedulerLookaheadSlots)
 {
     const auto n = static_cast<uint32_t>(pattern.size());
 
@@ -373,20 +382,40 @@ NrGnbPhy::GenerateStructuresFromPattern(const std::vector<LteNrTddSlotType>& pat
     {
         if ((*generationPattern)[i] == LteNrTddSlotType::UL)
         {
-            GenerateDciMaps(*generationPattern, toSendUl, generateUl, i, n2, l1l2CtrlLatency);
+            GenerateDciMaps(*generationPattern,
+                            toSendUl,
+                            generateUl,
+                            i,
+                            n2,
+                            ulSchedulerLookaheadSlots);
         }
         else if ((*generationPattern)[i] == LteNrTddSlotType::DL ||
                  (*generationPattern)[i] == LteNrTddSlotType::S)
         {
-            GenerateDciMaps(*generationPattern, toSendDl, generateDl, i, n0, l1l2CtrlLatency);
+            GenerateDciMaps(*generationPattern,
+                            toSendDl,
+                            generateDl,
+                            i,
+                            n0,
+                            dlSchedulerLookaheadSlots);
 
             int32_t k1 = ReturnHarqSlot(*generationPattern, i, n1);
             (*dlHarqfbPosition).insert(std::make_pair(i, k1));
         }
         else if ((*generationPattern)[i] == LteNrTddSlotType::F)
         {
-            GenerateDciMaps(*generationPattern, toSendDl, generateDl, i, n0, l1l2CtrlLatency);
-            GenerateDciMaps(*generationPattern, toSendUl, generateUl, i, n2, l1l2CtrlLatency);
+            GenerateDciMaps(*generationPattern,
+                            toSendDl,
+                            generateDl,
+                            i,
+                            n0,
+                            dlSchedulerLookaheadSlots);
+            GenerateDciMaps(*generationPattern,
+                            toSendUl,
+                            generateUl,
+                            i,
+                            n2,
+                            ulSchedulerLookaheadSlots);
 
             int32_t k1 = ReturnHarqSlot(*generationPattern, i, n1);
             (*dlHarqfbPosition).insert(std::make_pair(i, k1));
@@ -491,7 +520,8 @@ NrGnbPhy::SetTddPattern(const std::vector<LteNrTddSlotType>& pattern)
                                   0,
                                   GetN2Delay(),
                                   GetN1Delay(),
-                                  GetL1L2CtrlLatency());
+                                  GetL1L2CtrlLatency(),
+                                  GetUlSchedulerLookaheadSlots());
 }
 
 void
@@ -576,6 +606,12 @@ NrGnbPhy::GetN2Delay() const
     return m_n2Delay;
 }
 
+uint32_t
+NrGnbPhy::GetUlSchedulerLookaheadSlots() const
+{
+    return m_ulSchedulerLookaheadSlots;
+}
+
 void
 NrGnbPhy::SetN0Delay(uint32_t delay)
 {
@@ -594,6 +630,13 @@ void
 NrGnbPhy::SetN2Delay(uint32_t delay)
 {
     m_n2Delay = delay;
+    SetTddPattern(m_tddPattern); // Update the generate/send structures
+}
+
+void
+NrGnbPhy::SetUlSchedulerLookaheadSlots(uint32_t slots)
+{
+    m_ulSchedulerLookaheadSlots = slots;
     SetTddPattern(m_tddPattern); // Update the generate/send structures
 }
 

@@ -164,8 +164,6 @@ NrRlcUm::DoTransmitPdcpPdu(Ptr<Packet> p)
     DoTransmitBufferStatusReport();
     if (!m_txBuffer.empty() && !m_bsrTimer.IsPending())
     {
-        // codex added: start periodic BSR timer only if it is not already running.
-        // This avoids postponing periodic BSR indefinitely under sustained arrivals.
         m_bsrTimer = Simulator::Schedule(MilliSeconds(10), &NrRlcUm::ExpireBsrTimer, this);
     }
 }
@@ -508,8 +506,6 @@ NrRlcUm::DoNotifyTxOpportunity(NrMacSapUser::TxOpportunityParameters txOpParams)
 
     if (!m_txBuffer.empty() && !m_bsrTimer.IsPending())
     {
-        // codex added: do not cancel/restart an active periodic BSR timer here.
-        // Keep one running instance to preserve periodic expiry behavior.
         m_bsrTimer = Simulator::Schedule(MilliSeconds(10), &NrRlcUm::ExpireBsrTimer, this);
     }
 }
@@ -1280,7 +1276,6 @@ NrRlcUm::DoTransmitBufferStatusReport()
     r.retxQueueSize = 0;
     r.retxQueueHolDelay = 0;
     r.statusPduSize = 0;
-    r.expBsrTimer = m_expBsrTimer;
 
     // codex added
     m_bufferStatus(r.rnti,
@@ -1290,8 +1285,6 @@ NrRlcUm::DoTransmitBufferStatusReport()
                    r.retxQueueSize,
                    r.retxQueueHolDelay,
                    r.statusPduSize);
-
-    m_expBsrTimer = false;
 
     NS_LOG_LOGIC("Send BufferStatusReport = " << r.txQueueSize << ", " << r.txQueueHolDelay);
     m_macSapProvider->BufferStatusReport(r);
@@ -1343,7 +1336,6 @@ NrRlcUm::ExpireBsrTimer()
 
     if (!m_txBuffer.empty())
     {
-        m_expBsrTimer = true;
         DoTransmitBufferStatusReport();
         m_bsrTimer = Simulator::Schedule(MilliSeconds(10), &NrRlcUm::ExpireBsrTimer, this);
     }

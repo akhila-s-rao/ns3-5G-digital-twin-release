@@ -161,7 +161,6 @@ class NrRlcUm : public NrRlc
      */
     nr::SequenceNumber10 m_expectedSeqNumber;
 
-    bool m_expBsrTimer{false};
 };
 
 } // namespace ns3

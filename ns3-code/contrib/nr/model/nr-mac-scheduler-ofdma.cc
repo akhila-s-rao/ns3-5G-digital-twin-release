@@ -566,7 +566,14 @@ NrMacSchedulerOfdma::AssignULRBG(uint32_t symAvail, const ActiveUeMap& activeUl)
             while (schedInfoIt != ueVector.end())
             {
                 uint32_t bufQueueSize = schedInfoIt->second;
-                if (GetUe(*schedInfoIt)->m_ulTbSize >= std::max(bufQueueSize, 12U))
+                const auto& ue = GetUe(*schedInfoIt);
+                const uint32_t assignedRbgCount = ue->m_ulRBG.size() / beamSym;
+                const bool demandSatisfied = IsUlBootstrapPending(ue->m_rnti)
+                                                 ? assignedRbgCount >=
+                                                       GetUlBootstrapGrantRbgCount()
+                                                 : ue->m_ulTbSize >=
+                                                       std::max(bufQueueSize, 12U);
+                if (demandSatisfied)
                 {
                     std::advance(schedInfoIt, 1);
                 }
@@ -583,27 +590,38 @@ NrMacSchedulerOfdma::AssignULRBG(uint32_t symAvail, const ActiveUeMap& activeUl)
                 break;
             }
 
-            auto assignedRbg = remainingRbgSet.begin();
-            // Assign 1 RBG for each available symbols for the beam,
-            // and then update the count of available resources
-            auto& assignedRbgs = GetUe(*schedInfoIt)->m_ulRBG;
-            auto existingRbgs = assignedRbgs.size();
-            assignedRbgs.resize(assignedRbgs.size() + beamSym);
-            std::fill(assignedRbgs.begin() + existingRbgs, assignedRbgs.end(), *assignedRbg);
-            assigned.m_rbg++;
+            const auto& selectedUe = GetUe(*schedInfoIt);
+            const bool isBootstrap = IsUlBootstrapPending(selectedUe->m_rnti);
+            const uint32_t rbgsToAssign = isBootstrap ? GetUlBootstrapGrantRbgCount() : 1;
+            if (remainingRbgSet.size() < rbgsToAssign)
+            {
+                ueVector.erase(schedInfoIt);
+                continue;
+            }
 
-            auto& assignedSymbols = GetUe(*schedInfoIt)->m_ulSym;
-            auto existingSymbols = assignedSymbols.size();
-            assignedSymbols.resize(assignedSymbols.size() + beamSym);
-            std::iota(assignedSymbols.begin() + existingSymbols, assignedSymbols.end(), 0);
+            auto& assignedRbgs = selectedUe->m_ulRBG;
+            auto& assignedSymbols = selectedUe->m_ulSym;
+            for (uint32_t i = 0; i < rbgsToAssign; ++i)
+            {
+                auto assignedRbg = remainingRbgSet.begin();
+                auto existingRbgs = assignedRbgs.size();
+                assignedRbgs.resize(assignedRbgs.size() + beamSym);
+                std::fill(assignedRbgs.begin() + existingRbgs,
+                          assignedRbgs.end(),
+                          *assignedRbg);
+
+                auto existingSymbols = assignedSymbols.size();
+                assignedSymbols.resize(assignedSymbols.size() + beamSym);
+                std::iota(assignedSymbols.begin() + existingSymbols, assignedSymbols.end(), 0);
+
+                remainingRbgSet.erase(assignedRbg);
+            }
+            assigned.m_rbg += rbgsToAssign;
             assigned.m_sym = beamSym;
 
-            remainingRbgSet.erase(
-                assignedRbg); // Resources are RBG, so they do not consider the beamSym
-
             // Update metrics
-            NS_LOG_DEBUG("Assigned " << assigned.m_rbg << " UL RBG, spanned over " << beamSym
-                                     << " SYM, to UE " << GetUe(*schedInfoIt)->m_rnti);
+            NS_LOG_DEBUG("Assigned " << rbgsToAssign << " UL RBG, spanned over " << beamSym
+                                     << " SYM, to UE " << selectedUe->m_rnti);
             AssignedUlResources(*schedInfoIt, FTResources(beamSym, beamSym), assigned);
 
             // Update metrics for the unsuccessful UEs (who did not get any resource in this
