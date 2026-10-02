@@ -189,14 +189,6 @@ RADIO_STUDY_RUNS = [
 #     {"name": "c6", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 20}},
 #     {"name": "c7", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 25}},
 #     {"name": "c8", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30}},
-#     # vary number of UEs in background with fixed total load at 15 Mbps
-#     {"name": "y1", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 2}},
-#     {"name": "y2", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 3}},
-#     {"name": "y3", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 4}},
-#     {"name": "y4", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 5}},
-#     {"name": "y5", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 6}},
-#     {"name": "y6", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 7}},
-#     {"name": "y7", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 15, "numBackgroundUes": 8}},
 #     # vary number of UEs in background with fixed total load at 25 Mbps
 #     {"name": "x1", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 25, "numBackgroundUes": 2}},
 #     {"name": "x2", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 25, "numBackgroundUes": 3}},
@@ -209,14 +201,6 @@ RADIO_STUDY_RUNS = [
 #     {"name": "x9", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 25, "numBackgroundUes": 10}},
 #     {"name": "x10", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 25, "numBackgroundUes": 20}},
 #     {"name": "x11", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 25, "numBackgroundUes": 30}},
-#     # vary number of UEs in background with fixed total load at 30 Mbps
-#     {"name": "w1", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 2}},
-#     {"name": "w2", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 3}},
-#     {"name": "w3", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 4}},
-#     {"name": "w4", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 5}},
-#     {"name": "w5", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 6}},
-#     {"name": "w6", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 7}},
-#     {"name": "w7", "args": {"delayPktSize": 100, "delayInterval": "50ms", "loadType": "udp", "totalBackgroundLoad": 30, "numBackgroundUes": 8}},
 # ]
 
 
