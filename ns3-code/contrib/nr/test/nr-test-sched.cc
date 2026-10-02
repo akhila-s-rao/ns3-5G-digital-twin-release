@@ -371,9 +371,9 @@ NrSchedGeneralTestCase::TestSrBootstrapClassification(const Ptr<NrMacSchedulerNs
     NS_TEST_ASSERT_MSG_EQ(sched->GetEffectiveUlMcs(rnti, 20),
                           9,
                           "A bootstrap SR did not apply the configured MCS cap");
-    NS_TEST_ASSERT_MSG_EQ(sched->GetUlBootstrapGrantRbgCount(),
+    NS_TEST_ASSERT_MSG_EQ(sched->GetUlMinimumGrantRbgCount(),
                           5,
-                          "A one-PRB RBG configuration did not produce a five-PRB bootstrap grant");
+                          "A one-PRB RBG configuration did not produce a five-PRB minimum grant");
 
     sched->DoScheduleUlSr(&spoint, srList);
     NS_TEST_ASSERT_MSG_EQ(lcg->GetTotalSize(),

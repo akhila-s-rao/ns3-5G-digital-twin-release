@@ -568,11 +568,14 @@ NrMacSchedulerOfdma::AssignULRBG(uint32_t symAvail, const ActiveUeMap& activeUl)
                 uint32_t bufQueueSize = schedInfoIt->second;
                 const auto& ue = GetUe(*schedInfoIt);
                 const uint32_t assignedRbgCount = ue->m_ulRBG.size() / beamSym;
-                const bool demandSatisfied = IsUlBootstrapPending(ue->m_rnti)
-                                                 ? assignedRbgCount >=
-                                                       GetUlBootstrapGrantRbgCount()
-                                                 : ue->m_ulTbSize >=
-                                                       std::max(bufQueueSize, 12U);
+                const bool bootstrapPending = IsUlBootstrapPending(ue->m_rnti);
+                const uint32_t minimumGrantRbgCount =
+                    bootstrapPending ? GetUlBootstrapGrantRbgCount()
+                                     : GetUlMinimumGrantRbgCount();
+                const bool demandSatisfied =
+                    bootstrapPending ? assignedRbgCount >= minimumGrantRbgCount
+                                     : assignedRbgCount >= minimumGrantRbgCount &&
+                                           ue->m_ulTbSize >= std::max(bufQueueSize, 12U);
                 if (demandSatisfied)
                 {
                     std::advance(schedInfoIt, 1);
@@ -591,8 +594,13 @@ NrMacSchedulerOfdma::AssignULRBG(uint32_t symAvail, const ActiveUeMap& activeUl)
             }
 
             const auto& selectedUe = GetUe(*schedInfoIt);
-            const bool isBootstrap = IsUlBootstrapPending(selectedUe->m_rnti);
-            const uint32_t rbgsToAssign = isBootstrap ? GetUlBootstrapGrantRbgCount() : 1;
+            const uint32_t assignedRbgCount = selectedUe->m_ulRBG.size() / beamSym;
+            const uint32_t minimumGrantRbgCount =
+                IsUlBootstrapPending(selectedUe->m_rnti) ? GetUlBootstrapGrantRbgCount()
+                                                         : GetUlMinimumGrantRbgCount();
+            const uint32_t rbgsToAssign = assignedRbgCount < minimumGrantRbgCount
+                                              ? minimumGrantRbgCount - assignedRbgCount
+                                              : 1;
             if (remainingRbgSet.size() < rbgsToAssign)
             {
                 ueVector.erase(schedInfoIt);

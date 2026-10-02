@@ -50,7 +50,7 @@ Source: `contrib/nr/test/nr-test-sched.cc`
 - an SR with a zero gNB buffer estimate is classified as bootstrap;
 - a bootstrap SR seeds the synthetic UL-buffer estimate;
 - bootstrap MCS is capped at 9;
-- an RBG size of one still produces an exact five-PRB bootstrap grant;
+- the shared minimum-grant conversion maps a one-PRB RBG size to five RBGs;
 - repeated bootstrap SRs preserve pending bootstrap state until grant creation; and
 - releasing a UE clears its pending bootstrap state.
 

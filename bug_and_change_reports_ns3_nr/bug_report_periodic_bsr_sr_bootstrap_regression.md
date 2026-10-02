@@ -45,9 +45,12 @@ That fixed the permanent stall, but it conflated two different cases:
 - **Recovery SR:** the UE has waited too long for another grant, but the scheduler may already
   hold a valid positive buffer estimate.
 
-The ExPeCA-style configuration uses one PRB per RBG for normal grants. A genuine initial
-bootstrap SR is allocated exactly five PRBs, independently of the normal one-PRB scheduling
-granularity, matching the corresponding OAI grant.
+The ExPeCA-style configuration uses one PRB per RBG, preserving one-PRB scheduling
+granularity. The OFDMA scheduler enforces a five-PRB minimum for every new UL grant and then
+adds resources one PRB at a time until the buffer demand is satisfied. A genuine initial
+bootstrap SR therefore receives exactly five PRBs when its synthetic 12-byte estimate is
+satisfied by that minimum grant, matching the corresponding OAI behavior without forcing all
+allocations to be multiples of five PRBs.
 
 The scheduler then compounded the problem by unconditionally calling `UpdateInfo(12)` for all
 UL LCGs of every SR UE. A recovery SR therefore replaced, rather than supplemented, the gNB's
@@ -118,7 +121,11 @@ scheduling-delay calculations.
   - removes the periodic-RLC-expiry SR trigger.
 - `contrib/nr/model/nr-mac-scheduler-ns3.{h,cc}`
   - preserves positive UL estimates on recovery SR;
-  - tracks zero-estimate bootstrap state until grant creation.
+  - tracks zero-estimate bootstrap state until grant creation;
+  - converts the five-PRB UL grant floor to RBGs without changing RBG granularity.
+- `contrib/nr/model/nr-mac-scheduler-ofdma.cc`
+  - allocates at least five PRBs to bootstrap and ordinary UL grants;
+  - continues larger allocations in one-RBG increments.
 - `contrib/nr/model/nr-mac-sap.h`
   - removes the obsolete `expBsrTimer` cross-layer flag.
 - `contrib/nr/model/nr-rlc-{um,am}.{h,cc}` and `contrib/nr/model/nr-rlc.cc`
@@ -138,6 +145,7 @@ scheduling-delay calculations.
 - `nr-test-sched`
   - checks that recovery SR preserves a positive estimate and does not apply the bootstrap cap;
   - checks zero-estimate seeding and MCS limiting;
+  - checks the RBG-count conversion used to enforce a five-PRB minimum UL grant;
   - checks repeated bootstrap SR state; and
   - checks cleanup on UE release.
 

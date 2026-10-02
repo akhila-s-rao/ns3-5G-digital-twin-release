@@ -201,7 +201,7 @@ struct Parameters : CommonRadioParameters
     // UDP one-way delay probes (UL/DL).
     uint32_t delayPacketSize = 1400;
     Time delayInterval = Seconds (0.05);
-    Time delayIntervalJitter = MilliSeconds(3); // +/- jitter added to delayInterval.
+    Time delayIntervalJitter = delayInterval / 20; // Uniform +/-5% of the interval.
 
     // UDP echo
     uint32_t echoPacketSize = 1400;
@@ -209,6 +209,7 @@ struct Parameters : CommonRadioParameters
 
     void ApplyScenarioDefaults()
     {
+        delayIntervalJitter = delayInterval / 20;
         std::string scenario = digitalTwinScenario;
         std::transform(scenario.begin(), scenario.end(), scenario.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

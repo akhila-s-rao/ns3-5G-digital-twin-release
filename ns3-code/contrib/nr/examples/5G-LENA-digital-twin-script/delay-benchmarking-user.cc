@@ -4,6 +4,8 @@
 #include <ns3/show-progress.h>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <limits>
 #include "delay-benchmarking.h"
 /*
  * QCI lookup (NrEpsBearer::Qci):
@@ -31,6 +33,13 @@ int
 main (int argc, char *argv[])
 {
     Parameters params;
+    std::string tddPatternOverride;
+    int64_t srPeriodicitySlotsOverride = -1;
+    int64_t srOffsetSlotsOverride = -1;
+    int64_t numRbPerRbgOverride = -1;
+    int64_t bootstrapGrantPrbsOverride = -1;
+    int64_t bootstrapMaxMcsOverride = -1;
+    int64_t numerologyOverride = -1;
     /*
     * From here, we instruct the ns3::CommandLine class of all the input parameters
     * that we may accept as input, as well as their description, and the storage
@@ -56,15 +65,24 @@ main (int argc, char *argv[])
     cmd.AddValue("loadType",
                  "Background load type: none, udp, or tcp",
                  params.loadType);
-    cmd.AddValue("cbrLoad",
-                 "CBR load in Mbps",
-                 params.cbrLoadMbps);
-    cmd.AddValue("delayPacketSize",
-                 "Delay probe packet size in bytes",
-                 params.delayPacketSize);
+    cmd.AddValue("numBackgroundUes",
+                 "Number of background-traffic UEs; ignored when loadType is none",
+                 params.numBackgroundUes);
+    cmd.AddValue("totalBackgroundLoad",
+                 "Aggregate UDP CBR background load in Mbps; divided equally across background UEs",
+                 params.totalBackgroundLoadMbps);
+    cmd.AddValue("delayTrafficSource",
+                 "Probe traffic source: delay or burst",
+                 params.delayTrafficSource);
+    cmd.AddValue("delayPktSize",
+                 "Total UDP payload size per packet, including the source's measurement header",
+                 params.delayPktSize);
     cmd.AddValue("delayInterval",
-                 "Delay probe interval in seconds(e.g., 100ms, 1s)",
+                 "Mean interval between one-packet probe events or multi-packet burst events",
                  params.delayInterval);
+    cmd.AddValue("delayBurstPackets",
+                 "Number of UDP packets generated together in each burst",
+                 params.delayBurstPackets);
     cmd.AddValue ("appGenerationTime",
                 "Duration applications will generate traffic.",
                 params.appGenerationTime);
@@ -80,14 +98,69 @@ main (int argc, char *argv[])
     cmd.AddValue("fixUlMcs",
                  "UL MCS control: 0 keeps adaptive AMC; 1..27 forces fixed UL MCS",
                  params.fixUlMcs);
-    // Parse the command line
+    cmd.AddValue("tddPattern",
+                 "TDD slot pattern, using DL, UL, F, or S tokens separated by |",
+                 tddPatternOverride);
+    cmd.AddValue("srPeriodicitySlots",
+                 "Scheduling-request opportunity period in slots; zero means every slot, -1 uses profile default",
+                 srPeriodicitySlotsOverride);
+    cmd.AddValue("srOffsetSlots",
+                 "Scheduling-request opportunity offset in slots; -1 uses profile default",
+                 srOffsetSlotsOverride);
+    cmd.AddValue("numRbPerRbg",
+                 "Number of physical resource blocks per resource-block group; -1 uses profile default",
+                 numRbPerRbgOverride);
+    cmd.AddValue("bootstrapGrantPrbs",
+                 "Minimum SR bootstrap UL grant size in physical resource blocks; -1 uses profile default",
+                 bootstrapGrantPrbsOverride);
+    cmd.AddValue("bootstrapMaxMcs",
+                 "Maximum MCS used by an SR bootstrap UL grant; -1 uses profile default",
+                 bootstrapMaxMcsOverride);
+    cmd.AddValue("numerology",
+                 "NR numerology (0..5); SCS is 15 * 2^numerology kHz; -1 uses profile default",
+                 numerologyOverride);
+    // Parse user input first to select the profile, then apply explicit radio overrides below.
     cmd.Parse (argc, argv);
     params.ApplyScenarioDefaults();
+
+    auto applyUintOverride = [](const char* name, int64_t overrideValue, uint32_t& value) {
+        if (overrideValue == -1)
+        {
+            return;
+        }
+        NS_ABORT_MSG_IF(
+            overrideValue < 0 ||
+                static_cast<uint64_t>(overrideValue) > std::numeric_limits<uint32_t>::max(),
+            name << " must fit in an unsigned 32-bit integer");
+        value = static_cast<uint32_t>(overrideValue);
+    };
+    if (!tddPatternOverride.empty())
+    {
+        params.tddPattern = tddPatternOverride;
+    }
+    applyUintOverride("srPeriodicitySlots",
+                      srPeriodicitySlotsOverride,
+                      params.srPeriodicitySlots);
+    applyUintOverride("srOffsetSlots", srOffsetSlotsOverride, params.srOffsetSlots);
+    applyUintOverride("numRbPerRbg", numRbPerRbgOverride, params.numRbPerRbg);
+    applyUintOverride("bootstrapGrantPrbs",
+                      bootstrapGrantPrbsOverride,
+                      params.bootstrapGrantPrbs);
+    applyUintOverride("bootstrapMaxMcs", bootstrapMaxMcsOverride, params.bootstrapMaxMcs);
+    if (numerologyOverride != -1)
+    {
+        NS_ABORT_MSG_IF(numerologyOverride < 0 || numerologyOverride > 5,
+                        "numerology must be in [0,5]");
+        params.numerologyBwp1 = static_cast<uint16_t>(numerologyOverride);
+    }
     std::string load = params.loadType;
     std::transform(load.begin(), load.end(), load.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     params.loadType = load;
-    params.numUes = (load != "none") ? 2 : 1;
+    std::transform(params.delayTrafficSource.begin(), params.delayTrafficSource.end(),
+                   params.delayTrafficSource.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    params.numUes = (load != "none") ? 1 + params.numBackgroundUes : 1;
     std::string dir = params.direction;
     std::transform(dir.begin(), dir.end(), dir.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -105,6 +178,11 @@ main (int argc, char *argv[])
     {
         params.includeUlDelayApp = true;
         params.includeDlDelayApp = true;
+    }
+    if (params.delayTrafficSource == "burst")
+    {
+        params.includeUlDelayApp = false;
+        params.includeDlDelayApp = false;
     }
     params.Validate ();
 

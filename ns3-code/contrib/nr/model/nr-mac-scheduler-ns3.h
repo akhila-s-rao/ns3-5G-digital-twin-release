@@ -426,7 +426,6 @@ class NrMacSchedulerNs3 : public NrMacScheduler
 
     /**
      * @brief Enable/disable UL bootstrap MCS limiting for SR-triggered grants.
-     * When enabled, SR-triggered UL bootstrap grants use min(estimated UL MCS, 9).
      * @param v the value
      */
     void SetEnableBootstrapMcsLimit(bool v);
@@ -435,6 +434,26 @@ class NrMacSchedulerNs3 : public NrMacScheduler
      * @return true if enabled, false otherwise
      */
     bool IsBootstrapMcsLimitEnabled() const;
+    /**
+     * @brief Set the minimum SR bootstrap grant size in PRBs.
+     * @param value the number of PRBs
+     */
+    void SetBootstrapGrantPrbs(uint32_t value);
+    /**
+     * @brief Get the minimum SR bootstrap grant size in PRBs.
+     * @return the number of PRBs
+     */
+    uint32_t GetBootstrapGrantPrbs() const;
+    /**
+     * @brief Set the maximum MCS for SR bootstrap grants.
+     * @param value the MCS cap
+     */
+    void SetBootstrapMcsLimitUl(uint8_t value);
+    /**
+     * @brief Get the maximum MCS for SR bootstrap grants.
+     * @return the MCS cap
+     */
+    uint8_t GetBootstrapMcsLimitUl() const;
 
     /**
      * @brief Set the starting value for the DL MCS
@@ -779,7 +798,11 @@ class NrMacSchedulerNs3 : public NrMacScheduler
     bool IsUlBootstrapPending(uint16_t rnti) const;
 
     /**
-     * @brief Return the number of RBGs needed for the five-PRB bootstrap grant.
+     * @brief Return the number of RBGs needed for the five-PRB minimum UL grant.
+     */
+    uint32_t GetUlMinimumGrantRbgCount() const;
+    /**
+     * @brief Return the number of RBGs needed for the configured SR bootstrap grant.
      */
     uint32_t GetUlBootstrapGrantRbgCount() const;
 
@@ -1003,10 +1026,11 @@ class NrMacSchedulerNs3 : public NrMacScheduler
     bool m_fixedMcsDl{false};  //!< Fixed MCS for *all* UE in DL
     bool m_fixedMcsUl{false};  //!< Fixed MCS for *all* UE in UL
     bool m_enableBootstrapMcsLimit{
-        false};                //!< Apply min(UL MCS, m_bootstrapMcsLimitUl) for SR bootstrap grants
-    uint8_t m_startMcsDl{0};   //!< Starting (or fixed) value for DL MCS
-    uint8_t m_startMcsUl{0};   //!< Starting (or fixed) value for UL MCS
+        false}; //!< Apply min(UL MCS, m_bootstrapMcsLimitUl) for SR bootstrap grants
+    uint32_t m_bootstrapGrantPrbs{5}; //!< Minimum bootstrap grant size in PRBs
     uint8_t m_bootstrapMcsLimitUl{9}; //!< Cap used for SR bootstrap grants when enabled
+    uint8_t m_startMcsDl{0};          //!< Starting (or fixed) value for DL MCS
+    uint8_t m_startMcsUl{0};          //!< Starting (or fixed) value for UL MCS
     int8_t m_maxDlMcs{0};      //!< Maximum index for DL MCS
     int8_t m_maxUlMcs{-1};     //!< Maximum index for UL MCS; -1 disables the limit
     Time m_cqiTimersThreshold; //!< The time while a CQI is valid

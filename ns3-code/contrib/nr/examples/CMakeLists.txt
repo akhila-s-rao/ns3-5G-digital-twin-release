@@ -52,6 +52,7 @@ build_lib_example(
                5G-LENA-digital-twin-script/delay-benchmarking.cc
   LIBRARIES_TO_LINK ${libnr}
                     ${libflow-monitor}
+                    ${libvr-app}
 )
 
 build_lib_example(

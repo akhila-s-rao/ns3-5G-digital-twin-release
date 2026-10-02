@@ -20,6 +20,7 @@
 #include <ns3/nstime.h>
 #include <string>
 #include <cstdint>
+#include <limits>
 #include <ostream>
 #include <vector>
 #include <unordered_map>
@@ -53,6 +54,7 @@
 #include "ns3/nr-ue-power-control.h"
 #include "ns3/nr-eps-bearer.h"
 #include "ns3/nr-spectrum-phy.h"
+#include "ns3/seq-ts-size-frag-header.h"
 #include <iomanip>
 #include "ns3/log.h"
 #include "ns3/nr-phy-mac-common.h"
@@ -122,6 +124,7 @@ struct Parameters : CommonRadioParameters
     double BsHeight = 10;
     double ueHeight = 1.5;
     std::string loadType = "none"; // none, udp, or tcp
+    uint16_t numBackgroundUes = 1;
 
     // Simulation parameters
     Time appGenerationTime = Seconds (5);
@@ -161,7 +164,8 @@ struct Parameters : CommonRadioParameters
     bool includeUlDelayApp = true;
     bool includeDlDelayApp = true;
     std::string direction = "ul"; // ul, dl, or both
-    double cbrLoadMbps = 10.0;
+    double totalBackgroundLoadMbps = 10.0;
+    uint32_t backgroundPacketSizeBytes = 100;
     // QCI priority is considered only by QoS-based schedulers such as NrMacSchedulerOfdmaQos.
     // In the stock QoS scheduler, QCI affects UE ordering, not strict per-bearer scheduling.
     uint8_t controlBearerQci = NrEpsBearer::NGBR_LOW_LAT_EMBB; // NGBR_LOW_LAT_EMBB= priority_rank 68, NGBR_IMS=10
@@ -169,13 +173,18 @@ struct Parameters : CommonRadioParameters
     uint32_t fixUlMcs = 0;
     bool enableBootstrapMcsLimit = true; // Cap SR bootstrap UL grant MCS to min(estimated, 9).
 
-    // UDP one way delay probes
-    uint32_t delayPacketSize = 1400;
-    Time delayInterval = Seconds (0.1);
-    Time delayIntervalJitter = MilliSeconds (3);
+    // UDP probe traffic
+    std::string delayTrafficSource = "delay"; // delay or burst
+    // A generation event sends one packet in delay mode or delayBurstPackets together in burst mode.
+    // Packet size is the total UDP payload, including the selected source's measurement header.
+    uint32_t delayPktSize = 1400;
+    Time delayInterval = Seconds(0.1); // Mean event interval; uniform +/-5% jitter.
+    Time delayIntervalJitter = delayInterval / 20;
+    uint32_t delayBurstPackets = 10;
 
     void ApplyScenarioDefaults()
     {
+        delayIntervalJitter = delayInterval / 20;
         std::string scenario = digitalTwinScenario;
         std::transform(scenario.begin(), scenario.end(), scenario.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -226,9 +235,34 @@ struct Parameters : CommonRadioParameters
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         NS_ABORT_MSG_IF(!(load == "none" || load == "udp" || load == "tcp"),
                         "loadType must be 'none', 'udp', or 'tcp'");
+        NS_ABORT_MSG_IF(load != "none" && numBackgroundUes == 0,
+                        "numBackgroundUes must be positive when background load is enabled");
+        NS_ABORT_MSG_IF(load == "udp" && totalBackgroundLoadMbps <= 0.0,
+                        "totalBackgroundLoad must be positive for UDP background load");
+        std::string source = delayTrafficSource;
+        std::transform(source.begin(), source.end(), source.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        NS_ABORT_MSG_IF(!(source == "delay" || source == "burst"),
+                        "delayTrafficSource must be 'delay' or 'burst'");
+        NS_ABORT_MSG_IF(source == "burst" && dir != "ul",
+                        "The burst probe traffic source supports direction='ul' only");
+        NS_ABORT_MSG_IF(source == "burst" && delayPktSize < 24,
+                        "delayPktSize must be at least 24 bytes in burst mode");
+        NS_ABORT_MSG_IF(!delayInterval.IsPositive(), "delayInterval must be positive");
+        NS_ABORT_MSG_IF(source == "burst" && delayBurstPackets == 0,
+                        "delayBurstPackets must be positive");
+        NS_ABORT_MSG_IF(source == "burst" &&
+                            static_cast<uint64_t>(delayPktSize) * delayBurstPackets >
+                                std::numeric_limits<uint32_t>::max(),
+                        "delayPktSize * delayBurstPackets must fit in 32 bits");
         NS_ABORT_MSG_IF(fixUlMcs > 27,
                         "fixUlMcs must be 0 (adaptive) or in [1,27] for NrEesmCcT2");
         NS_ABORT_MSG_IF(maxUlMcs > 27, "maxUlMcs must be in [0,27] for NrEesmCcT2");
+        NS_ABORT_MSG_IF(numerologyBwp1 > 5, "numerology must be in [0,5]");
+        NS_ABORT_MSG_IF(numRbPerRbg == 0, "numRbPerRbg must be positive");
+        NS_ABORT_MSG_IF(bootstrapGrantPrbs == 0, "bootstrapGrantPrbs must be positive");
+        NS_ABORT_MSG_IF(bootstrapMaxMcs > 27,
+                        "bootstrapMaxMcs must be in [0,27] for NrEesmCcT2");
         NS_ABORT_MSG_IF(ueAntennaRows == 0 || ueAntennaColumns == 0 || gnbAntennaRows == 0 ||
                             gnbAntennaColumns == 0,
                         "antenna array dimensions must be positive");
@@ -516,6 +550,18 @@ void delayTrace (Ptr<OutputStreamWrapper> stream,
                 const Ptr<Node> &remoteHost,
                 std::string context,
                 Ptr<const Packet> packet, const Address &from, const Address &localAddress);
+void BurstProbeRx(Ptr<OutputStreamWrapper> stream,
+                  std::string context,
+                  Ptr<const Packet> burst,
+                  const Address& from,
+                  const Address& to,
+                  const SeqTsSizeFragHeader& header);
+void BurstProbeFragmentRx(Ptr<OutputStreamWrapper> stream,
+                          std::string context,
+                          Ptr<const Packet> fragment,
+                          const Address& from,
+                          const Address& to,
+                          const SeqTsSizeFragHeader& header);
 void loadTrace (Ptr<OutputStreamWrapper> stream,
                 const std::string& proto,
                 std::string context,
@@ -911,6 +957,58 @@ delayTrace(Ptr<OutputStreamWrapper> stream,
                          << seqTs.GetSeq() << "\t" << packetCopy->GetUid() << "\t"
                          << seqTs.GetTs().GetMicroSeconds() << "\t"
                          << (Simulator::Now() - seqTs.GetTs()).GetMicroSeconds() << std::endl;
+}
+
+void
+BurstProbeFragmentRx(Ptr<OutputStreamWrapper> stream,
+                     std::string context,
+                     Ptr<const Packet> fragment,
+                     const Address& from,
+                     const Address& to,
+                     const SeqTsSizeFragHeader& header)
+{
+    (void)context;
+    (void)fragment;
+    (void)to;
+    if (!InetSocketAddress::IsMatchingType(from))
+    {
+        return;
+    }
+
+    const uint16_t ueId = GetUeNodeIdFromIpAddr(from, &ueNodes, &ueIpIfaces);
+    const auto ids = MakeUeTraceIds(ueId);
+    const Time now = Simulator::Now();
+    *stream->GetStream() << now.GetMicroSeconds() << "\t" << ids.ueId << "\t" << ids.imsi
+                         << "\t" << ids.cellId << "\t" << ids.rnti << "\t" << header.GetSeq()
+                         << "\t" << header.GetSize() << "\t" << header.GetFrags() << "\t"
+                         << header.GetFragSeq() << "\t" << header.GetTs().GetMicroSeconds() << "\t"
+                         << (now - header.GetTs()).GetMicroSeconds() << std::endl;
+}
+
+void
+BurstProbeRx(Ptr<OutputStreamWrapper> stream,
+             std::string context,
+             Ptr<const Packet> burst,
+             const Address& from,
+             const Address& to,
+             const SeqTsSizeFragHeader& header)
+{
+    (void)context;
+    (void)burst;
+    (void)to;
+    if (!InetSocketAddress::IsMatchingType(from))
+    {
+        return;
+    }
+
+    const uint16_t ueId = GetUeNodeIdFromIpAddr(from, &ueNodes, &ueIpIfaces);
+    const auto ids = MakeUeTraceIds(ueId);
+    const Time now = Simulator::Now();
+    *stream->GetStream() << now.GetMicroSeconds() << "\t" << ids.ueId << "\t" << ids.imsi
+                         << "\t" << ids.cellId << "\t" << ids.rnti << "\t" << header.GetSeq()
+                         << "\t" << header.GetSize() << "\t" << header.GetFrags() << "\t"
+                         << header.GetTs().GetMicroSeconds() << "\t"
+                         << (now - header.GetTs()).GetMicroSeconds() << std::endl;
 }
 
 // PacketSink trace for background load traffic (TCP/UDP) on remoteHost.
@@ -1557,11 +1655,23 @@ void CreateTraceFiles (void)
 {
     simInfoStream = traceHelper.CreateFileStream ("sim_info.txt"); 
 
-    if (global_params.includeUlDelayApp || global_params.includeDlDelayApp)
+    if (global_params.delayTrafficSource != "burst" &&
+        (global_params.includeUlDelayApp || global_params.includeDlDelayApp))
     {
         delayStream = traceHelper.CreateFileStream ("delay_trace.txt");
         WriteHeader(delayStream,
                     "time_us\tdirection\tue_id\timsi\tcell_id\trnti\tpkt_size\tseq_num\tpkt_uid\t"
+                    "tx_time_us\tdelay_us");
+    }
+    if (global_params.delayTrafficSource == "burst")
+    {
+        fragmentRxStream = traceHelper.CreateFileStream("vrFragment_trace.txt");
+        WriteHeader(fragmentRxStream,
+                    "time_us\tue_id\timsi\tcell_id\trnti\tburst_seq\tburst_size\tnum_frags\t"
+                    "frag_seq\ttx_time_us\tdelay_us");
+        burstRxStream = traceHelper.CreateFileStream("vrBurst_trace.txt");
+        WriteHeader(burstRxStream,
+                    "time_us\tue_id\timsi\tcell_id\trnti\tburst_seq\tburst_size\tnum_frags\t"
                     "tx_time_us\tdelay_us");
     }
     if (global_params.loadType != "none")
@@ -1671,12 +1781,44 @@ void PrintSimInfoToFile()
         << "ul_delay_app_installed," << (global_params.includeUlDelayApp ? 1 : 0) << std::endl;
     *simInfoStream->GetStream()
         << "dl_delay_app_installed," << (global_params.includeDlDelayApp ? 1 : 0) << std::endl;
+    *simInfoStream->GetStream() << "delay_traffic_source," << global_params.delayTrafficSource
+                                << std::endl;
+    *simInfoStream->GetStream() << "background_load_type," << global_params.loadType
+                                << std::endl;
+    *simInfoStream->GetStream() << "background_ue_count,"
+                                << (global_params.loadType == "none"
+                                        ? 0
+                                        : global_params.numBackgroundUes)
+                                << std::endl;
+    *simInfoStream->GetStream() << "total_background_load_mbps,"
+                                << global_params.totalBackgroundLoadMbps << std::endl;
+    if (global_params.loadType == "udp")
+    {
+        *simInfoStream->GetStream() << "per_background_ue_load_mbps,"
+                                    << global_params.totalBackgroundLoadMbps /
+                                           global_params.numBackgroundUes
+                                    << std::endl;
+        *simInfoStream->GetStream() << "background_packet_size_bytes,"
+                                    << global_params.backgroundPacketSizeBytes << std::endl;
+    }
+    *simInfoStream->GetStream() << "delay_pkt_size_bytes," << global_params.delayPktSize
+                                << std::endl;
+    *simInfoStream->GetStream() << "delay_interval_seconds,"
+                                << global_params.delayInterval.As(Time::S) << std::endl;
+    if (global_params.delayTrafficSource == "burst")
+    {
+        *simInfoStream->GetStream() << "delay_burst_packets," << global_params.delayBurstPackets << std::endl;
+    }
     *simInfoStream->GetStream() << "fix_ul_mcs,"
                                 << (global_params.fixUlMcs == 0
                                         ? std::string("adaptive")
                                         : std::to_string(global_params.fixUlMcs))
                                 << std::endl;
     *simInfoStream->GetStream() << "max_ul_mcs," << global_params.maxUlMcs << std::endl;
+    *simInfoStream->GetStream() << "numerology," << global_params.numerologyBwp1
+                                << std::endl;
+    *simInfoStream->GetStream() << "num_rb_per_rbg," << global_params.numRbPerRbg
+                                << std::endl;
     *simInfoStream->GetStream() << "tdd_pattern," << global_params.tddPattern << std::endl;
     *simInfoStream->GetStream() << "f_slot_dl_allocation_symbols,"
                                 << global_params.fSlotDlAllocationSymbols << std::endl;
@@ -1727,11 +1869,10 @@ void PrintSimInfoToFile()
                                 << std::endl;
     *simInfoStream->GetStream() << "enable_bootstrap_mcs_limit,"
                                 << (global_params.enableBootstrapMcsLimit ? 1 : 0) << std::endl;
-    if (global_params.includeUlDelayApp || global_params.includeDlDelayApp)
-    {
-        *simInfoStream->GetStream() << "delay_pkt_interval_seconds,"
-                                    << global_params.delayInterval.As(Time::S) << std::endl;
-    }
+    *simInfoStream->GetStream() << "bootstrap_grant_prbs,"
+                                << global_params.bootstrapGrantPrbs << std::endl;
+    *simInfoStream->GetStream() << "bootstrap_max_mcs," << global_params.bootstrapMaxMcs
+                                << std::endl;
     std::cout << "Exiting PrintSimInfoToFile function that prints to sim_info.txt file" << std::endl;
 }
 
@@ -1740,15 +1881,20 @@ operator<< (std::ostream& os, const Parameters& parameters)
 {
     os << "Simulation parameters:\n"
        << "  numUes: " << parameters.numUes << std::endl
+       << "  numBackgroundUes: " << parameters.numBackgroundUes << std::endl
        << "  loadType: " << parameters.loadType << std::endl
        << "  direction: " << parameters.direction << std::endl
-       << "  cbrLoadMbps: " << parameters.cbrLoadMbps << std::endl
+       << "  totalBackgroundLoadMbps: " << parameters.totalBackgroundLoadMbps << std::endl
+       << "  backgroundPacketSizeBytes: " << parameters.backgroundPacketSizeBytes
+       << std::endl
        << "  fixUlMcs: "
        << (parameters.fixUlMcs == 0 ? std::string("adaptive")
                                     : std::to_string(parameters.fixUlMcs))
        << std::endl
        << "  maxUlMcs: " << parameters.maxUlMcs << std::endl
        << "  enableBootstrapMcsLimit: " << parameters.enableBootstrapMcsLimit << std::endl
+       << "  bootstrapGrantPrbs: " << parameters.bootstrapGrantPrbs << std::endl
+       << "  bootstrapMaxMcs: " << parameters.bootstrapMaxMcs << std::endl
        << "  centralFrequencyHz: " << parameters.centralFrequencyBand << std::endl
        << "  bandwidthHz: " << parameters.bandwidthHz << std::endl
        << "  numerology: " << parameters.numerologyBwp1 << std::endl
@@ -1762,6 +1908,10 @@ operator<< (std::ostream& os, const Parameters& parameters)
        << "  srOffsetSlots: " << parameters.srOffsetSlots << std::endl
        << "  tddPattern: " << parameters.tddPattern << std::endl
        << "  BsTxPower: " << parameters.BsTxPower << " dBm\n"
+       << "  delayTrafficSource: " << parameters.delayTrafficSource << std::endl
+       << "  delayPktSize: " << parameters.delayPktSize << std::endl
+       << "  delayInterval: " << parameters.delayInterval.As(Time::MS) << std::endl
+       << "  delayBurstPackets: " << parameters.delayBurstPackets << std::endl
        << "  includeUlDelayApp: " << parameters.includeUlDelayApp << std::endl
        << "  includeDlDelayApp: " << parameters.includeDlDelayApp << std::endl;
     return os;

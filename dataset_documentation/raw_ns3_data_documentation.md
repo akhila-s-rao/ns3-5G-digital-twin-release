@@ -31,6 +31,12 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 #### `sim_info.txt (recorded by controller script (not UE/gNB); N/A UL/DL)`
 - parameter: Parameter name for the run configuration snapshot.
 - value: Parameter value recorded for that name.
+- background_load_type: Benchmark background traffic mode: `none`, `udp`, or `tcp`.
+- background_ue_count: Number of background-only UEs created by the benchmark.
+- total_background_load_mbps: Configured aggregate UDP CBR load. It is divided equally among
+  background UEs and is ignored for TCP background traffic.
+- per_background_ue_load_mbps: UDP CBR rate assigned to each background UE.
+- background_packet_size_bytes: UDP packet size shared by every background UE.
 - max_ul_mcs: Maximum MCS index allowed for UL grants. Both simulation scenarios record this
   setting. The SR bootstrap-grant cap is recorded separately as enable_bootstrap_mcs_limit.
 - tdd_pattern: Configured 5G-LENA slot pattern. The ExPeCA profile uses `DL|DL|DL|F|UL`
@@ -107,14 +113,15 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 
 **`columns_used`** = `[time_us, rnti, pkt_size, delay_us]`
 
-#### `vrFragment_trace.txt (recorded at BurstSink (UE for DL, remote host for UL); UL or DL depends on sink placement)`
+#### `vrFragment_trace.txt (recorded at BurstSink; remote host for benchmark UL burst probes)`
 - time_us: Receive time in microseconds at the BurstSink.
 - ue_id: UE index inferred from the sink node or source address.
 - imsi: IMSI for the UE related to this fragment.
 - cell_id: Serving cell ID for that UE at log time.
 - rnti: UE RNTI from the UE RRC (if available).
 - burst_seq: Burst sequence number from SeqTsSizeFragHeader.
-- burst_size: Total burst size in bytes from SeqTsSizeFragHeader.
+- burst_size: Reassembled application payload bytes in the burst, excluding the 24-byte
+  SeqTsSizeFragHeader carried by each fragment.
 - num_frags: Total fragments for the burst from SeqTsSizeFragHeader.
 - frag_seq: Fragment sequence number within the burst from SeqTsSizeFragHeader.
 - tx_time_us: Fragment transmit timestamp in microseconds from SeqTsSizeFragHeader.
@@ -122,15 +129,19 @@ For logs that include an `lcid` column, filter to data bearers when creating par
 
 **`columns_used`** = `[time_us, rnti, burst_size, num_frags, delay_us]`
 
-#### `vrBurst_trace.txt (recorded at BurstSink (UE for DL, remote host for UL); UL or DL depends on sink placement)`
+#### `vrBurst_trace.txt (recorded after BurstSink has received every fragment)`
 - time_us: Receive time in microseconds at the BurstSink.
 - ue_id: UE index inferred from the sink node or source address.
 - imsi: IMSI for the UE related to this burst.
 - cell_id: Serving cell ID for that UE at log time.
 - rnti: UE RNTI from the UE RRC (if available).
 - burst_seq: Burst sequence number from SeqTsSizeFragHeader.
-- burst_size: Total burst size in bytes from SeqTsSizeFragHeader.
+- burst_size: Reassembled application payload bytes, excluding per-fragment burst headers.
 - num_frags: Total fragments for the burst from SeqTsSizeFragHeader.
+- tx_time_us: Burst generation timestamp in microseconds. This column is present for benchmark
+  burst probes; every fragment in these fixed bursts has the same transmit timestamp.
+- delay_us: Burst completion delay in microseconds (`time_us - tx_time_us`). This column is present
+  for benchmark burst probes. An incomplete burst does not produce a row.
 
 **`columns_used`** = `[time_us, rnti, burst_size, num_frags]`
 
@@ -263,7 +274,8 @@ An SR preceding a DATA grant does not by itself make that grant a bootstrap gran
 seeding and bootstrap MCS limiting apply only when the scheduler had a zero UL buffer estimate
 for the UE when processing the SR. A recovery SR with a positive estimate preserves that
 estimate and does not invoke the bootstrap MCS cap. The shared ExPeCA-style radio profile uses
-one PRB per RBG for normal grant sizing. A zero-estimate SR bootstrap grant uses exactly five
+one PRB per RBG, while the OFDMA scheduler enforces a five-PRB minimum for every UL grant and
+adds further resources one PRB at a time. A zero-estimate SR bootstrap grant uses exactly five
 PRBs and an MCS no greater than 9, matching the OAI bootstrap allocation.
 
 **Filter by msg_type = DATA**

@@ -32,6 +32,7 @@ These csv files contain one row per UL PDCP data packet with a valid positive pa
 | `pdcp_rx_time_us` | us | Time when receiver-side PDCP receives the packet. |
 | `ran_delay_ms` | ms | RAN delay. Sender-PDCP to receiver-PDCP delay. |
 | `pre_hol_wait_ms` | ms | Queue wait before the packet becomes head-of-line. |
+| `backlog` | binary | `1` when `pre_hol_wait_ms > 0`, proving that the packet waited behind existing data in its `(rnti, lcid)` RLC queue; `0` when no backlog was observed, and empty when pre-HOL wait is unavailable. A zero can include the rare case where a packet entered a nonempty queue and became head-of-line within the same timestamp. |
 | `hol_wait_ms` | ms | Head-of-line wait before grant/dequeue for the first RLC segment of the packet. |
 | `queueing_delay_ms` | ms | EXPECA-aligned interval from UE PDCP transmission/RLC enqueue to a virtual dequeue one millisecond before the scheduled PUSCH carrying the packet's first RLC component. If DCI processing occurs less than one millisecond before PUSCH, the virtual dequeue is clamped to the actual DCI/RLC-dequeue timestamp. |
 | `frame_alignment_delay_ms` | ms | Interval from UE-side PDCP TX to the start of the eligible slot in which a strictly matched initial scheduling request is transmitted. This removes the intra-slot UL-control-symbol offset from the metric. |
@@ -42,6 +43,8 @@ These csv files contain one row per UL PDCP data packet with a valid positive pa
 | `segmentation_delay_ms` | ms | Delay due to RLC segmentation of the packet. It is defined as the extra link delay not explained by transmission plus retransmission delay of the RLC segment with the largest delay. |
 | `reordering_delay_ms` | ms | Delay after all receiver-side RLC components for a packet are seen, until receiver-side PDCP receives the packet. This delay captures RLC waiting for reordering/window logic before pushing up the segments into the PDCP. |
 | `rlc_segments_per_pkt` | count | Number of distinct RLC sequence numbers associated with the packet. |
+| `harq_retransmissions_per_pkt` | count | Number of distinct retransmitted (`RV > 0`) MAC transport-block attempts that carried bytes belonging to the packet. A shared transport block is counted once for each packet represented in that block. |
+| `rlc_retransmissions_per_pkt` | count | Number of repeated transmissions of an RLC sequence number carrying bytes belonging to the packet. This is normally zero for the RLC UM data bearers used by the simulation campaigns. |
 | `transport_block_size_total_bytes` | bytes | Sum of scheduled transport-block sizes for the packet's initial (`RV=0`) RLC transmissions. HARQ retransmissions are excluded so that the same transport block is not counted repeatedly. |
 | `resource_block_size_total` | PRBs | Sum of physical resource blocks allocated across all MAC attempts associated with the packet, including HARQ retransmissions. |
 

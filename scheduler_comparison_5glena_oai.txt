@@ -1,0 +1,389 @@
+5G-LENA AND OAI UPLINK SCHEDULER COMPARISON
+============================================
+
+Scope
+-----
+
+This comparison covers the uplink schedulers actually used by the local
+simulation campaigns:
+
+  * 5G-LENA: NrMacSchedulerOfdmaPF, including the local bootstrap,
+    minimum-grant, F-slot, SR, MCS-cap, and scheduler-lookahead changes.
+  * OAI: the pf_ul() scheduler in the local openairinterface5g-edaf checkout.
+
+This is therefore a comparison of the code currently used for the datasets,
+not pristine upstream 5G-LENA against the latest upstream OAI.
+
+
+High-level conclusion
+---------------------
+
+Both systems use proportional-fair, per-scheduling-opportunity uplink
+scheduling. Neither scheduler optimizes over a future time horizon, and neither
+uses packet delay, head-of-line delay, or a delay deadline in its gNB PF metric.
+
+They nevertheless differ substantially in AMC behavior, resource-allocation
+granularity, logical-channel handling, HARQ resource sharing, and the realism
+of control-channel constraints.
+
+
+Major differences
+-----------------
+
+1. UE selection and proportional-fair metric
+
+5G-LENA:
+
+  * Uses potential_rate^alpha / average_rate.
+  * The default alpha is 1, giving conventional proportional fairness.
+  * Re-sorts the eligible UEs after each RBG-allocation iteration.
+  * Updates the PF state as RBGs are incrementally assigned.
+
+OAI:
+
+  * Uses an approximate reference TBS / average_rate coefficient.
+  * The reference TBS is precomputed using an approximate one-RB,
+    ten-symbol allocation rather than the exact candidate grant.
+  * Computes each UE's coefficient once, sorts the list once, and normally
+    allocates one grant to each selected UE in that scheduling opportunity.
+
+Implication:
+
+  Under contention, 5G-LENA can reconsider the preferred UE after each small
+  resource assignment. OAI establishes the UE order before allocating the
+  grants. With only one eligible UE, this difference has no effect.
+
+
+2. Throughput history
+
+5G-LENA:
+
+  * Uses LastAvgTPutWeight=99 by default.
+  * The corresponding averaging calculation gives approximately 1% weight to
+    current throughput.
+  * The value can be recalculated several times during one RBG-allocation loop.
+
+OAI:
+
+  * Updates ul_thr_ue as 0.99 * previous + 0.01 * current_bytes.
+  * Performs this update once per uplink scheduling invocation.
+
+Neither value represents a fixed 250 ms scheduler memory. It is an EWMA over
+scheduler updates, whose wall-clock duration depends on how often scheduling
+opportunities occur.
+
+
+3. Frequency-resource allocation
+
+5G-LENA:
+
+  * Incrementally allocates RBGs and represents the result with an RBG bitmap.
+  * The current campaign sets one RB per RBG, so allocation granularity is one
+    PRB after satisfying the five-PRB minimum.
+  * The final RBG bitmap can represent non-contiguous frequency resources.
+
+OAI:
+
+  * Searches for a contiguous free PRB region.
+  * Uses nr_find_nb_rb() to select enough contiguous PRBs for the estimated
+    unscheduled bytes, subject to available resources and a five-PRB minimum.
+  * Gives a selected UE one contiguous PRB block for the target PUSCH occasion.
+
+
+4. Minimum and bootstrap grants
+
+The current implementations are intentionally similar in this area.
+
+5G-LENA:
+
+  * An SR with no known buffered bytes creates a 12-byte scheduler placeholder.
+  * The grant contains at least five PRBs.
+  * A bootstrap-pending grant uses min(estimated MCS, 9).
+  * A recovery SR does not erase an already-positive gNB buffer estimate.
+
+OAI:
+
+  * When the UE is eligible because of SR or inactivity but has no unscheduled
+    estimated bytes, it receives exactly five PRBs.
+  * The MCS is capped by min_grant_mcs, whose default is 9.
+  * Ordinary data grants also use a minimum of five PRBs in this checkout.
+
+
+5. UL MCS adaptation
+
+This is one of the largest differences.
+
+5G-LENA:
+
+  * Processes PUSCH SINR feedback through the configured PHY error model.
+  * Tries MCS values and selects the highest one whose predicted initial TBLER
+    is no greater than 15%.
+  * Does not use observed HARQ ACK/NACK history to adjust MCS.
+  * Can react quickly to a new SINR report.
+  * The current campaign caps ordinary UL MCS at 20.
+
+OAI:
+
+  * Estimates initial TBLER from observed initial transmissions and first HARQ
+    retransmissions.
+  * Updates the estimate once every ten radio frames, or approximately 100 ms.
+  * Filters it as 0.9 * old BLER + 0.1 * current-window BLER.
+  * Changes MCS by at most one index per update.
+  * Starts at MCS 9 and reduces MCS toward 9 during insufficient activity.
+  * Uses configurable lower and upper BLER thresholds. Their code defaults are
+    5% and 15%, respectively.
+
+Implication:
+
+  OAI can remain at an overly aggressive MCS for multiple transmissions after
+  channel degradation. This can produce a burst of HARQ failures and a larger
+  delay tail. 5G-LENA normally responds immediately to modeled channel quality,
+  which makes its AMC more optimistic and less history-dependent.
+
+
+6. Buffer-state representation
+
+5G-LENA:
+
+  * Maintains scheduler-side LCG and logical-channel objects.
+  * Updates LCG estimates using quantized BSR levels.
+  * Determines UE activity by summing its scheduler-side LCG estimates.
+
+OAI:
+
+  * Reduces the received BSR information to one aggregate
+    estimated_ul_buffer at the gNB.
+  * Separately tracks sched_ul_bytes, meaning bytes for which future PUSCH
+    resources have already been granted.
+  * Schedules according to max(estimated_ul_buffer - sched_ul_bytes, 0).
+  * Decreases the estimate when MAC SDUs are successfully received and resets
+    it from newly received BSR information.
+
+Both systems schedule from quantized gNB-visible BSR estimates, not the exact
+number of bytes currently in the UE RLC queues.
+
+
+7. Logical-channel handling
+
+5G-LENA:
+
+  * The configured default is NrMacSchedulerLcRR.
+  * It divides the available TBS equally among active logical channels.
+  * It does not use QCI, packet deadlines, or strict application priority for
+    this division.
+
+OAI:
+
+  * The gNB grants a TBS to the UE rather than selecting individual LCID bytes.
+  * The UE constructs the MAC PDU using logical-channel prioritization.
+  * The UE procedure considers LC priority, prioritized bit rate, Bj buckets,
+    and equal sharing between logical channels with equal priority.
+
+Implication:
+
+  Separate LCIDs do not automatically receive differentiated treatment in the
+  current 5G-LENA scheduler. OAI can differentiate them if their configured
+  logical-channel priorities or PBR settings differ.
+
+
+8. HARQ scheduling
+
+Similarities:
+
+  * Both prioritize pending HARQ retransmissions over fresh data.
+  * Both currently permit four total attempts: one initial transmission and up
+    to three HARQ retransmissions.
+  * A retransmission preserves the transport block contents and TBS.
+
+Important difference:
+
+5G-LENA:
+
+  * The UL HARQ scheduler is effectively TDMA.
+  * A retransmission consumes available symbol budget, and fresh data uses the
+    remaining symbols rather than unused PRBs in those same symbols.
+  * If insufficient symbols remain, the retransmission is queued for a later
+    scheduling opportunity.
+
+OAI:
+
+  * Finds contiguous PRBs for the retransmission in the target PUSCH occasion.
+  * Marks only those PRB-symbol resources as occupied.
+  * Other UEs can use remaining PRBs in the same time-domain allocation.
+  * If the new time-domain allocation differs, OAI can change the retransmission
+    PRB count while requiring the resulting TBS to remain identical.
+
+This difference matters primarily under multi-UE load or when several HARQ
+processes require retransmission at the same time.
+
+
+9. PDCCH and CCE constraints
+
+5G-LENA:
+
+  * Reserves configured DL control symbols.
+  * The examined UL scheduling path does not perform an OAI-equivalent CCE
+    candidate search for every generated UL DCI.
+
+OAI:
+
+  * Every new grant and retransmission calls get_cce_index().
+  * A UE can be skipped even when PUSCH PRBs are available because there is no
+    free CCE for its UL DCI.
+  * OAI also caps the number of scheduled UEs according to approximate control
+    channel capacity and FAPI limits.
+
+This can make OAI scheduling delay grow under control-channel contention in a
+way that the current 5G-LENA abstraction may not reproduce.
+
+
+10. Power-headroom constraints
+
+OAI can use the UE power-headroom report to constrain MCS and the feasible PRB
+allocation before calculating TBS. No equivalent PHR-based grant-sizing step
+was found in the examined 5G-LENA scheduler path.
+
+
+11. SR and inactivity behavior
+
+5G-LENA:
+
+  * Primarily activates an empty-buffer UE through SR.
+  * The locally added SR periodicity and offset control when that SR can be sent.
+  * It does not have an equivalent gNB periodic inactivity-polling grant in this
+    scheduler path.
+
+OAI:
+
+  * A UE becomes eligible because it has unscheduled estimated bytes, has an SR,
+    or has exceeded the configured uplink inactivity interval.
+  * An inactivity-triggered UE with no estimated data receives the same small
+    five-PRB grant used to solicit current buffer information.
+  * ulsch_max_frame_inactivity is configurable. Its default is ten frames; when
+    configured as zero, this code uses one TDD period as the polling interval.
+
+
+12. Scheduling and DCI timing
+
+5G-LENA:
+
+  * Precomputes scheduler-invocation, DCI, and PUSCH relationships from the TDD
+    pattern.
+  * The current profile uses N2Delay=6 slots and
+    UlSchedulerLookaheadSlots=6 slots.
+  * The F slot is locally configured with five DL allocation symbols and three
+    UL allocation symbols to approximate the OAI special slot.
+
+OAI:
+
+  * Runs the MAC scheduling procedure for each processing slot.
+  * Can generate an UL grant only in a DL-capable slot because DCI 0 must be
+    transmitted first.
+  * Uses the configured time-domain allocation and K2 to identify the future
+    PUSCH slot.
+
+The lookahead is implementation-pipeline time, not an optimization horizon or
+scheduler memory.
+
+
+Potential OAI PF comparator problem
+-----------------------------------
+
+The OAI PF scheduler calls qsort(), but its comparator is:
+
+  return ((UEsched_t*)p)->coef < ((UEsched_t*)q)->coef;
+
+This returns only zero or one. A C qsort() comparator must return a negative
+value, zero, or a positive value consistently according to the ordering of its
+two arguments. The current implementation violates that contract, so PF
+ordering is not formally guaranteed when multiple UEs compete.
+
+This has no effect when there is only one eligible UE. It could affect which UE
+is considered first when both the delay-probe UE and a background UE compete,
+although the practical effect is reduced when enough resources exist to serve
+both UEs in the same scheduling opportunity.
+
+
+Practical relevance to the datasets
+-----------------------------------
+
+For one active UE with no competing traffic:
+
+  * The PF-ranking implementation is mostly irrelevant.
+  * AMC, BSR timing, SR/inactivity behavior, TDD timing, K2, and HARQ timing are
+    the important differences.
+
+For two or more active UEs:
+
+  * Iterative versus one-pass PF allocation matters.
+  * Contiguous OAI grants versus 5G-LENA RBG bitmaps matter.
+  * OAI CCE availability and PHR constraints can prevent or reduce grants.
+  * OAI UE-side logical-channel prioritization can differ from 5G-LENA's equal
+    LCID split.
+  * HARQ retransmissions consume resources differently in the two systems.
+  * The OAI qsort comparator should be treated as a possible source of unstable
+    UE ordering.
+
+The largest likely contributor to different retransmission and delay-tail
+behavior is AMC. OAI adapts slowly from observed HARQ failures, whereas
+5G-LENA directly converts recent modeled SINR into an MCS that satisfies its
+predicted 15% TBLER limit.
+
+
+Code references
+---------------
+
+5G-LENA campaign scheduler selection:
+  ns3-code/contrib/nr/examples/5G-LENA-digital-twin-script/delay-benchmarking.cc:199
+  ns3-code/contrib/nr/examples/5G-LENA-digital-twin-script/cellular-network.cc:274
+
+5G-LENA common campaign radio profile:
+  ns3-code/contrib/nr/examples/5G-LENA-digital-twin-script/digital-twin-radio-profile.h:10
+
+5G-LENA PF configuration and callbacks:
+  ns3-code/contrib/nr/model/nr-mac-scheduler-ofdma-pf.cc:20
+
+5G-LENA PF metric and throughput state:
+  ns3-code/contrib/nr/model/nr-mac-scheduler-ue-info-pf.cc:35
+  ns3-code/contrib/nr/model/nr-mac-scheduler-ue-info-pf.h:162
+
+5G-LENA iterative UL RBG assignment:
+  ns3-code/contrib/nr/model/nr-mac-scheduler-ofdma.cc:515
+
+5G-LENA SR bootstrap handling and HARQ-first scheduling:
+  ns3-code/contrib/nr/model/nr-mac-scheduler-ns3.cc:1850
+  ns3-code/contrib/nr/model/nr-mac-scheduler-ns3.cc:2174
+
+5G-LENA UL SINR/error-model AMC:
+  ns3-code/contrib/nr/model/nr-amc.cc:208
+
+5G-LENA UL HARQ scheduling:
+  ns3-code/contrib/nr/model/nr-mac-scheduler-harq-rr.cc:414
+
+5G-LENA logical-channel round robin:
+  ns3-code/contrib/nr/model/nr-mac-scheduler-lc-rr.cc:49
+
+5G-LENA timing-map generation:
+  ns3-code/contrib/nr/model/nr-gnb-phy.cc:298
+
+OAI UL PF scheduler, bootstrap and ordinary grant allocation:
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_ulsch.c:1663
+
+OAI PF comparator:
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_ulsch.c:1659
+
+OAI K2 and contiguous target-slot resource processing:
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_ulsch.c:1964
+
+OAI UL HARQ resource allocation:
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_ulsch.c:1515
+
+OAI filtered observed-BLER MCS adaptation:
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_gNB/gNB_scheduler_primitives.c:728
+
+OAI UE logical-channel prioritization:
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_UE/nr_ue_scheduler.c:2829
+  /home/ubuntu/openairinterface5g-edaf/openair2/LAYER2/NR_MAC_UE/nr_ue_scheduler.c:3056
+
+OAI default MAC/RLC scheduler parameters:
+  /home/ubuntu/openairinterface5g-edaf/openair2/GNB_APP/MACRLC_nr_paramdef.h:95

@@ -47,7 +47,8 @@
 #include <iomanip>
 #include <cctype>
 #include "ns3/log.h"
-// ns3 VR app
+#include "ns3/burst-sink-helper.h"
+#include "ns3/bursty-helper.h"
 
 #define DELAY_BENCHMARKING_IMPLEMENTATION
 #include "delay-benchmarking.h"
@@ -211,6 +212,10 @@ void CellularNetwork(const Parameters& params)
     nrHelper->SetSchedulerAttribute("MaxUlMcs", IntegerValue(params.maxUlMcs));
     nrHelper->SetSchedulerAttribute("EnableBootstrapMcsLimit",
                                     BooleanValue(params.enableBootstrapMcsLimit));
+    nrHelper->SetSchedulerAttribute("BootstrapGrantPrbs",
+                                    UintegerValue(params.bootstrapGrantPrbs));
+    nrHelper->SetSchedulerAttribute("BootstrapMcsLimitUl",
+                                    UintegerValue(params.bootstrapMaxMcs));
     nrHelper->SetSchedulerAttribute("FSlotDlAllocationSymbols",
                                     UintegerValue(params.fSlotDlAllocationSymbols));
     nrHelper->SetSchedulerAttribute("FSlotUlAllocationSymbols",
@@ -340,6 +345,7 @@ void CellularNetwork(const Parameters& params)
     NetDeviceContainer ueNetDevs = nrHelper->InstallUeDevice(ueNodes, allBwps);
     InitializeCellBwpNumRbPerRbg(gnbNetDev);
     const uint16_t ulDelayPortNum = 17000;
+    const bool useBurstDelayTraffic = params.delayTrafficSource == "burst";
     const uint16_t dlDelayPortNum = 18000;
     const uint16_t ulLoadPortNum = 19000;
     NrEpsBearer ctrlBearer(static_cast<NrEpsBearer::Qci>(params.controlBearerQci));
@@ -356,6 +362,8 @@ void CellularNetwork(const Parameters& params)
     ctrlTft->Add(ulDelayPf);
     const bool hasLoad = (params.loadType != "none");
     const bool loadTcp = (params.loadType == "tcp");
+    const double perBackgroundUeLoadMbps =
+        hasLoad && !loadTcp ? params.totalBackgroundLoadMbps / params.numBackgroundUes : 0.0;
     if (hasLoad)
     {
         NrEpcTft::PacketFilter ulLoadPf;
@@ -413,6 +421,8 @@ void CellularNetwork(const Parameters& params)
 
     // Declaration of Helpers for Sinks and Servers 
     UdpServerHelper ulDelayPacketSink (ulDelayPortNum);
+    BurstSinkHelper ulBurstPacketSink(
+        "ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), ulDelayPortNum));
     UdpServerHelper dlDelayPacketSink (dlDelayPortNum);
     PacketSinkHelper ulLoadTcpSink ("ns3::TcpSocketFactory",
                                     InetSocketAddress (Ipv4Address::GetAny (), ulLoadPortNum));
@@ -420,7 +430,11 @@ void CellularNetwork(const Parameters& params)
                                     InetSocketAddress (Ipv4Address::GetAny (), ulLoadPortNum));
     
     // Server Creation 
-    if (params.includeUlDelayApp)
+    if (useBurstDelayTraffic)
+    {
+        serverApps.Add(ulBurstPacketSink.Install(remoteHost));
+    }
+    else if (params.includeUlDelayApp)
     {
         serverApps.Add (ulDelayPacketSink.Install (remoteHost)); // appId updated on remoteHost
     }
@@ -463,28 +477,54 @@ void CellularNetwork(const Parameters& params)
 
         nrHelper->ActivateDedicatedEpsBearer(ueDevice, ctrlBearer, ctrlTft);
 
-        // In load experiments UE 0 is the probe UE and UE 1 carries only background traffic.
-        const bool installDelayApps = !hasLoad || ueId == 0;
-        if (installDelayApps && params.includeDlDelayApp)
+        // UE 0 carries probe traffic; every remaining UE carries only background traffic.
+        const bool installProbeApps = !hasLoad || ueId == 0;
+        if (installProbeApps && useBurstDelayTraffic)
+        {
+            const uint64_t burstSize =
+                static_cast<uint64_t>(params.delayPktSize) * params.delayBurstPackets;
+            const double intervalSeconds = params.delayInterval.GetSeconds();
+            std::ostringstream periodRv;
+            periodRv << "ns3::UniformRandomVariable[Min=" << std::setprecision(17)
+                     << intervalSeconds * 0.95 << "|Max=" << intervalSeconds * 1.05 << "]";
+            BurstyHelper burstyHelper(
+                "ns3::UdpSocketFactory", InetSocketAddress(remoteHostAddr, ulDelayPortNum));
+            burstyHelper.SetAttribute("FragmentSize", UintegerValue(params.delayPktSize));
+            burstyHelper.SetBurstGenerator(
+                "ns3::SimpleBurstGenerator",
+                "BurstSizeRv",
+                StringValue("ns3::ConstantRandomVariable[Constant=" +
+                            std::to_string(burstSize) + "]"),
+                "PeriodRv",
+                StringValue(periodRv.str()));
+            ApplicationContainer burstApp = burstyHelper.Install(node);
+            const Time startTime = MilliSeconds(startRng->GetValue(
+                params.appStartTime.GetMilliSeconds(),
+                (params.appStartTime + appStartWindow).GetMilliSeconds()));
+            burstApp.Start(startTime);
+            burstApp.Stop(startTime + params.appGenerationTime);
+            clientApps.Add(burstApp);
+        }
+        if (installProbeApps && !useBurstDelayTraffic && params.includeDlDelayApp)
         {
             serverApps.Add (dlDelayPacketSink.Install (node));  
             auto appType3 = InstallDlDelayTrafficApps (node, addr,
                                   remoteHost, dlDelayPortNum, params.appStartTime,
                                   startRng, params.appGenerationTime,
-                                  params.delayPacketSize, params.delayInterval,
+                                  params.delayPktSize, params.delayInterval,
                                   params.delayIntervalJitter);
             clientApps.Add (appType3.first);
         }
-        if (installDelayApps && params.includeUlDelayApp)
+        if (installProbeApps && !useBurstDelayTraffic && params.includeUlDelayApp)
         {
             auto appType2 = InstallUlDelayTrafficApps (node,
                                   remoteHostAddr, ulDelayPortNum, params.appStartTime,
                                   startRng, params.appGenerationTime,
-                                  params.delayPacketSize, params.delayInterval,
+                                  params.delayPktSize, params.delayInterval,
                                   params.delayIntervalJitter);
             clientApps.Add (appType2.first);
         }
-        if (hasLoad && ueId == 1)
+        if (hasLoad && ueId > 0)
         {
             double loadStartMs = startRng->GetValue (params.appStartTime.GetMilliSeconds (),
                                                      (params.appStartTime + appStartWindow).GetMilliSeconds ());
@@ -504,8 +544,9 @@ void CellularNetwork(const Parameters& params)
                 OnOffHelper onoff ("ns3::UdpSocketFactory",
                                    InetSocketAddress (remoteHostAddr, ulLoadPortNum));
                 onoff.SetAttribute ("DataRate",
-                                    DataRateValue (DataRate (static_cast<uint64_t>(params.cbrLoadMbps * 1e6))));
-                onoff.SetAttribute ("PacketSize", UintegerValue (100));
+                                    DataRateValue (DataRate (static_cast<uint64_t>(
+                                        std::llround(perBackgroundUeLoadMbps * 1e6)))));
+                onoff.SetAttribute ("PacketSize", UintegerValue (params.backgroundPacketSizeBytes));
                 onoff.SetAttribute ("OnTime",
                                     StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
                 onoff.SetAttribute ("OffTime",
@@ -534,7 +575,14 @@ void CellularNetwork(const Parameters& params)
     // enable packet tracing from the application layer 
     // appId is being used here BE CAREFUL about changing the order 
     // in which the apps get added to the server container
-    if (params.includeUlDelayApp || params.includeDlDelayApp)
+    if (useBurstDelayTraffic)
+    {
+        Config::Connect("/NodeList/*/ApplicationList/*/$ns3::BurstSink/FragmentRx",
+                        MakeBoundCallback(&BurstProbeFragmentRx, fragmentRxStream));
+        Config::Connect("/NodeList/*/ApplicationList/*/$ns3::BurstSink/BurstRx",
+                        MakeBoundCallback(&BurstProbeRx, burstRxStream));
+    }
+    else if (params.includeUlDelayApp || params.includeDlDelayApp)
     {
         Config::Connect ("/NodeList/*/ApplicationList/*/$ns3::UdpServer/RxWithAddresses", 
         MakeBoundCallback (&udpServerTrace, 

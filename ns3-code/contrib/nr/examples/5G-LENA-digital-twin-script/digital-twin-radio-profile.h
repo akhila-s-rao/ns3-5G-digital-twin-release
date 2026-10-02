@@ -35,6 +35,8 @@ struct CommonRadioParameters
     uint32_t srPeriodicitySlots = 10;
     uint32_t srOffsetSlots = 3;
     uint32_t maxUlMcs = 20;
+    uint32_t bootstrapGrantPrbs = 5;
+    uint32_t bootstrapMaxMcs = 9;
     uint32_t rlcTxBuffSize = 80 * 1024;
     uint32_t tcpUdpBuffSize = 500 * 1024;
 };

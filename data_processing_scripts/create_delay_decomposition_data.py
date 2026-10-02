@@ -13,6 +13,7 @@ DRB_LCID_MIN = 3  # SRB0/1/2 are reserved; DRB/data LCIDs start at 3.
 # SeqTs, UDP/IPv4 (28 B), and the PDCP header (2 B).
 DELAY_PROBE_PDCP_OVERHEAD_BYTES = 42
 DELAY_PROBE_MATCH_TOLERANCE_US = 100
+BURST_FRAGMENT_MATCH_TOLERANCE_US = 100
 KNOWN_LOGS = [
     "NrUlPdcpRxStats.txt",
     "NrUlRlcRxComponentStats.txt",
@@ -56,6 +57,7 @@ RLC_GRANT_MATCH_TOLERANCE_US = 100
 TB_GRANT_MATCH_TOLERANCE_US = 1_000
 EXPECA_VIRTUAL_DEQUEUE_LEAD_US = 1_000
 DEFAULT_JOBS = min(4, os.cpu_count() or 1)
+TRACE_CHUNK_ROWS = 500_000
 NR_FRAME_US = 10_000
 NR_SUBFRAME_US = 1_000
 NR_SLOTS_PER_SUBFRAME = (16, 8, 4, 2, 1)
@@ -167,9 +169,11 @@ def build_packet_radio_resources(
         return None
 
     matched["initial_tb_size"] = matched["tb_size"].where(matched["rv"] == 0, 0)
+    matched["is_harq_retransmission"] = (matched["rv"] > 0).astype(int)
     return matched.groupby(PACKET_KEYS, as_index=False).agg(
         transport_block_size_total_bytes=("initial_tb_size", "sum"),
         resource_block_size_total=("num_prbs", "sum"),
+        harq_retransmissions_per_pkt=("is_harq_retransmission", "sum"),
     )
 
 
@@ -179,7 +183,7 @@ def match_delay_probe_packet_keys(
 ) -> tuple[pd.DataFrame, int]:
     """Return packet keys matched to UL probe receptions in delay_trace.txt."""
     if delay_trace is None:
-        raise ValueError("--delay-probes-only requires delay_trace.txt")
+        raise ValueError("probe matching requires delay_trace.txt")
 
     required_trace_cols = {
         "time_us",
@@ -287,6 +291,128 @@ def match_delay_probe_packet_keys(
         .drop_duplicates(subset=PACKET_KEYS, keep="first")
     )
     return keys, len(probes)
+
+
+def match_burst_fragment_packet_keys(
+    candidates: pd.DataFrame,
+    fragment_trace: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, int]:
+    """Return packet keys matched to received UL burst fragments."""
+    if fragment_trace is None:
+        raise ValueError("burst matching requires vrFragment_trace.txt")
+
+    required_trace_cols = {
+        "time_us",
+        "tx_time_us",
+        "rnti",
+        "burst_seq",
+        "frag_seq",
+    }
+    missing_trace_cols = sorted(required_trace_cols.difference(fragment_trace.columns))
+    if missing_trace_cols:
+        raise ValueError(f"vrFragment_trace.txt missing columns: {missing_trace_cols}")
+
+    required_candidate_cols = {
+        *PACKET_KEYS,
+        "pdcp_rx_time_us",
+        "ran_delay_ms",
+    }
+    missing_candidate_cols = sorted(required_candidate_cols.difference(candidates.columns))
+    if missing_candidate_cols:
+        raise ValueError(
+            "PDCP packet table missing columns needed for burst matching: "
+            f"{missing_candidate_cols}"
+        )
+
+    fragments = fragment_trace[
+        ["time_us", "tx_time_us", "rnti", "burst_seq", "frag_seq"]
+    ].rename(
+        columns={
+            "time_us": "fragment_rx_time_us",
+            "tx_time_us": "fragment_tx_time_us",
+        }
+    )
+    for column in fragments.columns:
+        fragments[column] = pd.to_numeric(fragments[column], errors="coerce")
+    fragments = fragments.dropna()
+    fragments["fragment_tx_time_us"] = fragments["fragment_tx_time_us"].astype(float)
+    if fragments.empty or candidates.empty:
+        return pd.DataFrame(columns=PACKET_KEYS), len(fragments)
+
+    candidates = candidates.copy()
+    for column in [*PACKET_KEYS, "pdcp_rx_time_us", "ran_delay_ms"]:
+        candidates[column] = pd.to_numeric(candidates[column], errors="coerce")
+    candidates = candidates.dropna(subset=required_candidate_cols)
+    candidates["pdcp_tx_time_us"] = (
+        candidates["pdcp_rx_time_us"] - candidates["ran_delay_ms"] * 1000.0
+    )
+
+    bursts = fragments[
+        ["rnti", "burst_seq", "fragment_tx_time_us"]
+    ].drop_duplicates()
+    candidates = pd.merge_asof(
+        candidates.sort_values("pdcp_tx_time_us"),
+        bursts.sort_values("fragment_tx_time_us"),
+        left_on="pdcp_tx_time_us",
+        right_on="fragment_tx_time_us",
+        by="rnti",
+        direction="nearest",
+        tolerance=BURST_FRAGMENT_MATCH_TOLERANCE_US,
+    ).dropna(subset=["burst_seq"])
+
+    fragments = fragments.sort_values(
+        ["rnti", "burst_seq", "fragment_rx_time_us", "frag_seq"]
+    )
+    fragments["fragment_order"] = fragments.groupby(
+        ["rnti", "burst_seq"], sort=False
+    ).cumcount()
+    candidates = candidates.sort_values(
+        ["rnti", "burst_seq", "pdcp_rx_time_us", "pkt_id"]
+    )
+    candidates["fragment_order"] = candidates.groupby(
+        ["rnti", "burst_seq"], sort=False
+    ).cumcount()
+    matched = candidates.merge(
+        fragments[
+            ["rnti", "burst_seq", "fragment_order", "fragment_rx_time_us"]
+        ],
+        on=["rnti", "burst_seq", "fragment_order"],
+        how="inner",
+    )
+    matched = matched[
+        matched["fragment_rx_time_us"].between(
+            matched["pdcp_rx_time_us"],
+            matched["pdcp_rx_time_us"] + BURST_FRAGMENT_MATCH_TOLERANCE_US,
+        )
+    ]
+    return matched[PACKET_KEYS].drop_duplicates(), len(fragments)
+
+
+def match_delay_traffic_packet_keys(
+    candidates: pd.DataFrame,
+    input_dir: Path,
+) -> tuple[pd.DataFrame, int]:
+    """Match all received delay-probe or delay-burst packets in a run."""
+    matches = []
+    expected_count = 0
+
+    delay_trace = load_tsv(input_dir / "delay_trace.txt")
+    if delay_trace is not None:
+        keys, count = match_delay_probe_packet_keys(candidates, delay_trace)
+        matches.append(keys)
+        expected_count += count
+
+    fragment_trace = load_tsv(input_dir / "vrFragment_trace.txt")
+    if fragment_trace is not None:
+        keys, count = match_burst_fragment_packet_keys(candidates, fragment_trace)
+        matches.append(keys)
+        expected_count += count
+
+    if not matches:
+        raise ValueError(
+            "--delay-traffic-only requires delay_trace.txt or vrFragment_trace.txt"
+        )
+    return pd.concat(matches, ignore_index=True).drop_duplicates(PACKET_KEYS), expected_count
 
 
 def filter_to_packet_keys(
@@ -568,11 +694,22 @@ def load_trace(
     packet_keys: pd.DataFrame | None = None,
 ) -> pd.DataFrame | None:
     """Load and validate a trace, optionally filtering it to selected packets."""
-    trace = load_tsv(input_dir / filename)
-    if filename in PACKET_TRACE_FILES:
-        trace = filter_data_only(trace)
+    path = input_dir / filename
+    if not path.exists():
+        return None
+    if packet_keys is None:
+        trace = load_tsv(path)
+        if filename in PACKET_TRACE_FILES:
+            trace = filter_data_only(trace)
+    else:
+        chunks = []
+        for chunk in pd.read_csv(path, sep=r"\s+", chunksize=TRACE_CHUNK_ROWS):
+            if filename in PACKET_TRACE_FILES:
+                chunk = filter_data_only(chunk)
+            chunks.append(filter_to_packet_keys(chunk, packet_keys))
+        trace = pd.concat(chunks, ignore_index=True)
     trace = require_optional_columns(trace, filename, TRACE_REQUIRED_COLUMNS[filename])
-    return filter_to_packet_keys(trace, packet_keys)
+    return trace
 
 
 def has_required_logs(run_dir: Path) -> bool:
@@ -702,12 +839,16 @@ def build_lena_delay_decomposition_table(
     table = merge_metric_column(
         table,
         df_rlc_segments_per_pkt,
-        ["rlc_segments_per_pkt"],
+        ["rlc_segments_per_pkt", "rlc_retransmissions_per_pkt"],
     )
     table = merge_metric_column(
         table,
         df_packet_radio_resources,
-        ["transport_block_size_total_bytes", "resource_block_size_total"],
+        [
+            "transport_block_size_total_bytes",
+            "resource_block_size_total",
+            "harq_retransmissions_per_pkt",
+        ],
     )
 
     table = table.rename(
@@ -715,6 +856,9 @@ def build_lena_delay_decomposition_table(
             "pkt_size": "pkt_size_bytes",
         }
     )
+    if "pre_hol_wait_ms" in table.columns:
+        pre_hol_wait = pd.to_numeric(table["pre_hol_wait_ms"], errors="coerce")
+        table["backlog"] = pre_hol_wait.gt(0).where(pre_hol_wait.notna()).astype("Int64")
     residual_cols = {
         "ran_delay_ms",
         "queueing_delay_ms",
@@ -738,6 +882,7 @@ def build_lena_delay_decomposition_table(
         "pdcp_rx_time_us",
         "ran_delay_ms",
         "pre_hol_wait_ms",
+        "backlog",
         "hol_wait_ms",
         "queueing_delay_ms",
         "frame_alignment_delay_ms",
@@ -748,6 +893,8 @@ def build_lena_delay_decomposition_table(
         "segmentation_delay_ms",
         "reordering_delay_ms",
         "rlc_segments_per_pkt",
+        "harq_retransmissions_per_pkt",
+        "rlc_retransmissions_per_pkt",
         "transport_block_size_total_bytes",
         "resource_block_size_total",
     ]
@@ -757,20 +904,20 @@ def build_lena_delay_decomposition_table(
 
 def load_lena_delay_decomposition(
     input_dir: Path,
-    delay_probes_only: bool = False,
+    delay_traffic_only: bool = False,
 ) -> pd.DataFrame | None:
     if not has_required_logs(input_dir):
         print(f"WARN: skipping {input_dir}, no known log files found")
         return None
 
     packet_keys = None
-    probe_count = None
+    delay_packet_count = None
     try:
         df_ul_pdcp_rx = load_trace(input_dir, "NrUlPdcpRxStats.txt")
-        if delay_probes_only:
-            packet_keys, probe_count = match_delay_probe_packet_keys(
+        if delay_traffic_only:
+            packet_keys, delay_packet_count = match_delay_traffic_packet_keys(
                 build_pdcp_packet_table(df_ul_pdcp_rx),
-                load_tsv(input_dir / "delay_trace.txt"),
+                input_dir,
             )
             df_ul_pdcp_rx = filter_to_packet_keys(df_ul_pdcp_rx, packet_keys)
 
@@ -871,6 +1018,12 @@ def load_lena_delay_decomposition(
             ]
         ].dropna().copy()
         if not tx_comp.empty:
+            tx_comp = tx_comp.drop_duplicates(
+                [*PACKET_KEYS, "rlc_sn", "rlc_tx_time_us"]
+            ).sort_values("rlc_tx_time_us")
+            tx_comp["is_rlc_retransmission"] = tx_comp.duplicated(
+                [*PACKET_KEYS, "rlc_sn"], keep="first"
+            ).astype(int)
             df_rlc_segments_per_pkt = (
                 tx_comp.groupby(PACKET_KEYS, as_index=False)
                 .agg(
@@ -880,6 +1033,7 @@ def load_lena_delay_decomposition(
                         "min",
                     ),
                     rlc_segments_per_pkt=("rlc_sn", "nunique"),
+                    rlc_retransmissions_per_pkt=("is_rlc_retransmission", "sum"),
                 )
             )
 
@@ -1016,11 +1170,10 @@ def load_lena_delay_decomposition(
         df_rlc_segments_per_pkt,
         df_packet_radio_resources,
     )
-    if delay_probes_only and len(table) != probe_count:
+    if delay_traffic_only and len(table) != delay_packet_count:
         print(
-            f"WARN: {input_dir} matched {len(table)} of {probe_count} UL delay probes "
-            "to decomposed PDCP packets within "
-            f"{DELAY_PROBE_MATCH_TOLERANCE_US} us"
+            f"WARN: {input_dir} matched {len(table)} of {delay_packet_count} UL delay-traffic "
+            "packets to decomposed PDCP packets"
         )
     return table
 
@@ -1028,11 +1181,11 @@ def load_lena_delay_decomposition(
 def write_lena_delay_decomposition_csv(
     lena_run_dir: Path,
     csv_output_dir: Path,
-    delay_probes_only: bool = False,
+    delay_traffic_only: bool = False,
 ) -> None:
     delay_decomposition = load_lena_delay_decomposition(
         lena_run_dir,
-        delay_probes_only=delay_probes_only,
+        delay_traffic_only=delay_traffic_only,
     )
     if delay_decomposition is None:
         print(f"WARN: skipping {lena_run_dir.name}, unusable 5G-LENA logs: {lena_run_dir}")
@@ -1066,11 +1219,12 @@ def main():
         help=f"Maximum parallel run workers (default: {DEFAULT_JOBS}).",
     )
     parser.add_argument(
-        "--delay-probes-only",
+        "--delay-traffic-only",
+        dest="delay_traffic_only",
         action="store_true",
         help=(
-            "Include only UL delay-probe packets matched through delay_trace.txt; "
-            "exclude other data traffic."
+            "Include only UL delay probes or burst fragments matched through their "
+            "application traces; exclude background traffic."
         ),
     )
     args = parser.parse_args()
@@ -1099,7 +1253,7 @@ def main():
             write_lena_delay_decomposition_csv(
                 lena_run_dir,
                 csv_output_dir,
-                delay_probes_only=args.delay_probes_only,
+                delay_traffic_only=args.delay_traffic_only,
             )
     else:
         with ProcessPoolExecutor(max_workers=workers) as executor:
@@ -1108,7 +1262,7 @@ def main():
                     write_lena_delay_decomposition_csv,
                     sorted(lena_runs),
                     repeat(csv_output_dir),
-                    repeat(args.delay_probes_only),
+                    repeat(args.delay_traffic_only),
                 )
             )
 

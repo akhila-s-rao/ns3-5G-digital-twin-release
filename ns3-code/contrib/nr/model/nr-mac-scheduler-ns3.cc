@@ -132,12 +132,25 @@ NrMacSchedulerNs3::GetTypeId()
                           MakeBooleanAccessor(&NrMacSchedulerNs3::SetFixedUlMcs,
                                               &NrMacSchedulerNs3::IsUlMcsFixed),
                           MakeBooleanChecker())
-            .AddAttribute("EnableBootstrapMcsLimit",
-                          "If true, SR-triggered UL bootstrap grants use min(estimated UL MCS, 9)",
-                          BooleanValue(false),
-                          MakeBooleanAccessor(&NrMacSchedulerNs3::SetEnableBootstrapMcsLimit,
-                                              &NrMacSchedulerNs3::IsBootstrapMcsLimitEnabled),
-                          MakeBooleanChecker())
+            .AddAttribute(
+                "EnableBootstrapMcsLimit",
+                "If true, cap SR-triggered UL bootstrap grants at BootstrapMcsLimitUl",
+                BooleanValue(false),
+                MakeBooleanAccessor(&NrMacSchedulerNs3::SetEnableBootstrapMcsLimit,
+                                    &NrMacSchedulerNs3::IsBootstrapMcsLimitEnabled),
+                MakeBooleanChecker())
+            .AddAttribute("BootstrapGrantPrbs",
+                          "Minimum number of PRBs for an SR-triggered UL bootstrap grant",
+                          UintegerValue(5),
+                          MakeUintegerAccessor(&NrMacSchedulerNs3::SetBootstrapGrantPrbs,
+                                               &NrMacSchedulerNs3::GetBootstrapGrantPrbs),
+                          MakeUintegerChecker<uint32_t>(1))
+            .AddAttribute("BootstrapMcsLimitUl",
+                          "Maximum MCS for an SR-triggered UL bootstrap grant",
+                          UintegerValue(9),
+                          MakeUintegerAccessor(&NrMacSchedulerNs3::SetBootstrapMcsLimitUl,
+                                               &NrMacSchedulerNs3::GetBootstrapMcsLimitUl),
+                          MakeUintegerChecker<uint8_t>(0, 27))
             .AddAttribute("StartingMcsDl",
                           "Starting MCS for DL",
                           UintegerValue(0),
@@ -344,6 +357,34 @@ NrMacSchedulerNs3::IsBootstrapMcsLimitEnabled() const
 }
 
 void
+NrMacSchedulerNs3::SetBootstrapGrantPrbs(uint32_t value)
+{
+    NS_LOG_FUNCTION(this << value);
+    m_bootstrapGrantPrbs = value;
+}
+
+uint32_t
+NrMacSchedulerNs3::GetBootstrapGrantPrbs() const
+{
+    NS_LOG_FUNCTION(this);
+    return m_bootstrapGrantPrbs;
+}
+
+void
+NrMacSchedulerNs3::SetBootstrapMcsLimitUl(uint8_t value)
+{
+    NS_LOG_FUNCTION(this << static_cast<uint32_t>(value));
+    m_bootstrapMcsLimitUl = value;
+}
+
+uint8_t
+NrMacSchedulerNs3::GetBootstrapMcsLimitUl() const
+{
+    NS_LOG_FUNCTION(this);
+    return m_bootstrapMcsLimitUl;
+}
+
+void
 NrMacSchedulerNs3::SetStartMcsDl(uint8_t v)
 {
     NS_LOG_FUNCTION(this);
@@ -458,11 +499,18 @@ NrMacSchedulerNs3::IsUlBootstrapPending(uint16_t rnti) const
 }
 
 uint32_t
+NrMacSchedulerNs3::GetUlMinimumGrantRbgCount() const
+{
+    constexpr uint32_t minimumGrantPrbs = 5;
+    const uint32_t rbPerRbg = GetNumRbPerRbg();
+    return (minimumGrantPrbs + rbPerRbg - 1) / rbPerRbg;
+}
+
+uint32_t
 NrMacSchedulerNs3::GetUlBootstrapGrantRbgCount() const
 {
-    constexpr uint32_t bootstrapGrantPrbs = 5;
     const uint32_t rbPerRbg = GetNumRbPerRbg();
-    return (bootstrapGrantPrbs + rbPerRbg - 1) / rbPerRbg;
+    return (m_bootstrapGrantPrbs + rbPerRbg - 1) / rbPerRbg;
 }
 
 void
